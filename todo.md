@@ -5,3 +5,12 @@
                     Wikidata
     Lightnovel:     https://ranobedb.org/
                     https://www.novelupdates.com/
+                    Erank
+                    BookWalker Japan
+
+# GOODREADS
+    Title
+    Desc
+    Genre
+    Review
+    Point
