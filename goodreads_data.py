@@ -205,12 +205,11 @@ if __name__ == "__main__":
     
     for key, val in data.items():
         if key == "Desc" and val:
-            display_desc = val[:150] + "..." if len(val) > 150 else val
-            print(f"{key}: {display_desc}")
+            print(f"{key}: {val}")
         elif key == "Review" and isinstance(val, list):
             print(f"{key} (10 Best Reviews):")
             for i, r in enumerate(val):
-                snippet = r['Text'][:100].replace('\n', ' ') + "..." if r['Text'] else ""
+                snippet = r['Text'].replace('\n', ' ') 
                 print(f"  {i+1}. {r['Author']} ({r['Rating']} stars, {r['Likes']} likes): {snippet}")
         else:
             print(f"{key}: {val}")

@@ -14,3 +14,7 @@
     Genre
     Review
     Point
+
+# Plan
+    https://www.goodreads.com/list: https://www.goodreads.com/list/show/1 -> increase and get all books
+    other plan: get isbn from open library
