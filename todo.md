@@ -19,3 +19,6 @@
     https://www.goodreads.com/list: https://www.goodreads.com/list/show/1 -> increase and get all books
     other plan: get isbn from open library -> https://www.goodreads.com/search?q={isbn}: Ex: https://www.goodreads.com/search?q=9781480405806
         if have same title -> remove
+# DATA
+    https://www.kaggle.com/datasets/pypiahmad/goodreads-book-reviews1
+    https://www.kaggle.com/datasets/pooriamst/best-books-ever-dataset
