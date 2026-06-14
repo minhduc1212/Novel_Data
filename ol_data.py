@@ -34,13 +34,27 @@ def extract_novels_from_massive_dump(input_file, output_file):
         # tqdm giúp hiển thị tốc độ quét (lines/second)
         for line in tqdm(infile, desc="Đang quét"):
             try:
-                # Cắt chuỗi bằng Tab. Dữ liệu JSON luôn nằm ở cột cuối cùng (index 4)
-                parts = line.split('\t')
+                # Cắt chuỗi bằng Tab. Giới hạn split tối đa 4 lần để tránh chia nhỏ phần JSON nếu có chứa tab
+                parts = line.split('\t', 4)
                 if len(parts) < 5:
                     continue
                 
+                json_str = parts[4]
+                # 1. BỘ LỌC NHANH TRÊN CHUỖI THÔ (Tăng tốc độ vượt trội)
+                # Chỉ xử lý dòng nếu có chứa trường isbn_13 hoặc isbn_10
+                if 'isbn_13' not in json_str and 'isbn_10' not in json_str:
+                    continue
+                # Chỉ xử lý nếu có subjects
+                if 'subjects' not in json_str:
+                    continue
+                
+                # Kiểm tra nhanh từ khóa thể loại tiểu thuyết (giảm thiểu số lần gọi json.loads)
+                json_str_lower = json_str.lower()
+                if not any(kw in json_str_lower for kw in ['fiction', 'novel', 'romance', 'fantasy', 'mystery', 'thriller', 'horror', 'young adult']):
+                    continue
+                
                 # Load JSON
-                data = json.loads(parts[4])
+                data = json.loads(json_str)
                 
                 # Ưu tiên lấy ISBN-13 (tiêu chuẩn mới), nếu không có mới lấy ISBN-10
                 isbns = data.get('isbn_13', [])
