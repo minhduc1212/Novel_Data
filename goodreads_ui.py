@@ -181,8 +181,14 @@ class GoodreadsApp(customtkinter.CTk):
         # Shelf Tag Filter
         self.shelf_label = customtkinter.CTkLabel(self.filters_scroll, text="Popular Shelf / Tag", font=customtkinter.CTkFont(size=12))
         self.shelf_label.pack(anchor="w", padx=5, pady=(5, 2))
-        self.shelf_entry = customtkinter.CTkEntry(self.filters_scroll, placeholder_text="e.g. fantasy")
+        self.shelf_entry = customtkinter.CTkEntry(self.filters_scroll, placeholder_text="e.g. fantasy, romance")
         self.shelf_entry.pack(fill="x", padx=5, pady=(0, 10))
+
+        # Genre Filter
+        self.genre_label = customtkinter.CTkLabel(self.filters_scroll, text="Genre", font=customtkinter.CTkFont(size=12))
+        self.genre_label.pack(anchor="w", padx=5, pady=(5, 2))
+        self.genre_entry = customtkinter.CTkEntry(self.filters_scroll, placeholder_text="e.g. fiction, young-adult")
+        self.genre_entry.pack(fill="x", padx=5, pady=(0, 10))
 
         # Author ID Filter
         self.author_label = customtkinter.CTkLabel(self.filters_scroll, text="Author ID", font=customtkinter.CTkFont(size=12))
@@ -259,8 +265,19 @@ class GoodreadsApp(customtkinter.CTk):
             height=40,
             command=lambda val: self.trigger_search()
         )
-        self.sort_menu.grid(row=0, column=2, padx=(0, 0))
+        self.sort_menu.grid(row=0, column=2, padx=(0, 10))
         self.sort_menu.set("Popularity")
+
+        # Sort Direction Options
+        self.sort_dir_menu = customtkinter.CTkOptionMenu(
+            self.search_bar_frame,
+            values=["Desc (High to Low)", "Asc (Low to High)"],
+            width=150,
+            height=40,
+            command=lambda val: self.trigger_search()
+        )
+        self.sort_dir_menu.grid(row=0, column=3, padx=(0, 0))
+        self.sort_dir_menu.set("Desc (High to Low)")
 
         # Results area (Row 1) - Scrollable list of book cards
         self.results_frame = customtkinter.CTkScrollableFrame(self.main_frame, corner_radius=8)
@@ -339,6 +356,7 @@ class GoodreadsApp(customtkinter.CTk):
         self.year_max_entry.delete(0, "end")
         self.ebook_menu.set("All Formats")
         self.shelf_entry.delete(0, "end")
+        self.genre_entry.delete(0, "end")
         self.author_entry.delete(0, "end")
         self.publisher_entry.delete(0, "end")
 
@@ -483,6 +501,10 @@ class GoodreadsApp(customtkinter.CTk):
         if not shelf:
             shelf = None
 
+        genre = self.genre_entry.get().strip()
+        if not genre:
+            genre = None
+
         author = self.author_entry.get().strip()
         if not author:
             author = None
@@ -500,6 +522,12 @@ class GoodreadsApp(customtkinter.CTk):
         elif sort_val == "Publish Year":
             sort_by = 'year'
 
+        # Resolve sort direction
+        sort_dir_val = self.sort_dir_menu.get()
+        sort_dir = 'desc'
+        if "Asc" in sort_dir_val:
+            sort_dir = 'asc'
+
         # Pagination params
         offset = (self.current_page - 1) * self.results_per_page
         limit = self.results_per_page
@@ -514,9 +542,11 @@ class GoodreadsApp(customtkinter.CTk):
             "language_code": lang_filter,
             "is_ebook": is_ebook,
             "shelf": shelf,
+            "genre": genre,
             "author_id": author,
             "publisher_query": publisher,
             "sort_by": sort_by,
+            "sort_dir": sort_dir,
             "limit": limit,
             "offset": offset
         }
@@ -676,8 +706,21 @@ class GoodreadsApp(customtkinter.CTk):
         )
         meta2_lbl.grid(row=2, column=0, columnspan=2, sticky="w", padx=15, pady=2)
 
+        # Resolve genres
+        genres = book.get('genres') or []
+        if isinstance(genres, list):
+            genres_list = genres
+        elif isinstance(genres, dict):
+            genres_list = list(genres.keys())
+        else:
+            genres_list = []
+        genres_str = ", ".join(genres_list) if genres_list else ""
+
         # Metadata Row 3: Format, Pub, Year, Language, Shelves
         details_str = f"Language: {lang}  •  Format: {fmt}  •  Publisher: {pub} ({year})  •  Shelves: {shelves_str}"
+        if genres_str:
+            details_str += f"  •  Genres: {genres_str}"
+            
         meta3_lbl = customtkinter.CTkLabel(
             card_frame,
             text=details_str,
@@ -749,6 +792,7 @@ class GoodreadsApp(customtkinter.CTk):
         self.search_entry.delete(0, "end")
         self.author_entry.delete(0, "end")
         self.shelf_entry.delete(0, "end")
+        self.genre_entry.delete(0, "end")
         
         # Enter ID filter and search
         self.id_filter_to_inject = book_id
@@ -882,14 +926,16 @@ class DetailPopup(customtkinter.CTkToplevel):
         bottom_frame.grid_columnconfigure(0, weight=1, minsize=350)
         bottom_frame.grid_columnconfigure(1, weight=1, minsize=350)
 
-        # Popular Shelves List
+        # Popular Shelves & Genres List
         shelves_sub = customtkinter.CTkFrame(bottom_frame)
         shelves_sub.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
         
-        shelves_lbl = customtkinter.CTkLabel(shelves_sub, text="Popular Shelves", font=customtkinter.CTkFont(size=12, weight="bold"))
+        shelves_lbl = customtkinter.CTkLabel(shelves_sub, text="Shelves & Genres", font=customtkinter.CTkFont(size=12, weight="bold"))
         shelves_lbl.pack(anchor="w", padx=10, pady=5)
         
         shelves = book.get('popular_shelves') or []
+        genres = book.get('genres') or []
+        
         shelves_box = customtkinter.CTkTextbox(shelves_sub, height=100, font=customtkinter.CTkFont(size=11))
         shelves_box.pack(fill="both", expand=True, padx=10, pady=(0, 10))
         
@@ -898,8 +944,27 @@ class DetailPopup(customtkinter.CTkToplevel):
             if isinstance(s, dict) and s.get('name'):
                 cnt = f" ({s['count']})" if s.get('count') else ""
                 shelves_list.append(f"• {s['name']}{cnt}")
-        
-        shelves_box.insert("0.0", "\n".join(shelves_list) if shelves_list else "No popular shelves information.")
+                
+        genres_list = []
+        if isinstance(genres, list):
+            for g in genres:
+                genres_list.append(f"• {g}")
+        elif isinstance(genres, dict):
+            for k in genres.keys():
+                genres_list.append(f"• {k}")
+                
+        text_content = ""
+        if shelves_list:
+            text_content += "Popular Shelves:\n" + "\n".join(shelves_list)
+        if genres_list:
+            if text_content:
+                text_content += "\n\n"
+            text_content += "Genres:\n" + "\n".join(genres_list)
+            
+        if not text_content:
+            text_content = "No popular shelves or genres information."
+            
+        shelves_box.insert("0.0", text_content)
         shelves_box.configure(state="disabled")
 
         # Similar Books List (Clickable IDs!)

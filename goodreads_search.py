@@ -9,6 +9,96 @@ import csv
 # Default data path in the environment
 data_path = "D:\\LT\\data\\goodreads_books.json"
 
+# Comprehensive dictionary mapping common shelf names to standard genres
+GENRE_KEYWORDS = {
+    # Fantasy, Sci-Fi & Paranormal
+    'fantasy': 'fantasy',
+    'urban-fantasy': 'fantasy',
+    'ya-fantasy': 'fantasy',
+    'magic': 'fantasy',
+    'wizards': 'fantasy',
+    'paranormal': 'paranormal',
+    'supernatural': 'supernatural',
+    'sci-fi': 'science fiction',
+    'science-fiction': 'science fiction',
+    'scifi': 'science fiction',
+    'sci-fi-fantasy': 'science fiction',
+    'scifi-fantasy': 'science fiction',
+    'science-fiction-fantasy': 'science fiction',
+    'fantasy-sci-fi': 'science fiction',
+    'high-fantasy': 'fantasy',
+    'epic-fantasy': 'fantasy',
+    'dystopian': 'dystopia',
+    'dystopia': 'dystopia',
+    'steampunk': 'steampunk',
+    'cyberpunk': 'cyberpunk',
+    
+    # Fiction & Literature
+    'fiction': 'fiction',
+    'novel': 'fiction',
+    'novels': 'fiction',
+    'ya-fiction': 'fiction',
+    'classics': 'classics',
+    'classic': 'classics',
+    'contemporary': 'contemporary',
+    'drama': 'drama',
+    'poetry': 'poetry',
+    'chick-lit': 'chick lit',
+    'literary-fiction': 'fiction',
+    
+    # Mystery, Thriller, Horror & Crime
+    'mystery': 'mystery',
+    'thriller': 'thriller',
+    'crime': 'crime',
+    'detective': 'mystery',
+    'suspense': 'thriller',
+    'horror': 'horror',
+    'gothic': 'horror',
+    'mystery-thriller': 'mystery',
+    
+    # Age Groups
+    'young-adult': 'young adult',
+    'ya': 'young adult',
+    'teen': 'young adult',
+    'youth': 'young adult',
+    'middle-grade': 'middle grade',
+    'children': 'children',
+    'childrens': 'children',
+    'children-s': 'children',
+    'kids': 'children',
+    'kids-books': 'children',
+    'childrens-books': 'children',
+    'children-s-books': 'children',
+    'juvenile': 'children',
+    'children-s-literature': 'children',
+    'children-s-lit': 'children',
+    'childhood-books': 'children',
+    
+    # Action, Adventure & Romance
+    'adventure': 'adventure',
+    'romance': 'romance',
+    'romantic': 'romance',
+    'historical-romance': 'romance',
+    
+    # Historical & Non-fiction
+    'historical-fiction': 'historical fiction',
+    'history': 'history',
+    'historical': 'history',
+    'biography': 'biography',
+    'memoir': 'biography',
+    'autobiography': 'biography',
+    'non-fiction': 'non-fiction',
+    'nonfiction': 'non-fiction',
+    
+    # Others
+    'humor': 'comedy',
+    'comedy': 'comedy',
+    'graphic-novel': 'graphic novel',
+    'manga': 'manga',
+    'comic': 'comics',
+    'comics': 'comics'
+}
+
 def normalize_book(book_dict):
     """
     Normalizes book dictionaries from either:
@@ -123,6 +213,32 @@ def build_index(data_path, db_path, progress_callback=None):
         print(f"Error: Data file not found at {data_path}")
         return False
         
+    # Load genres mapping in memory if genres file exists
+    genres_path = "D:\\LT\\data\\goodreads_book_genres_initial.json"
+    genres_map = {}
+    if os.path.exists(genres_path):
+        print(f"Loading genres mapping from {genres_path}...")
+        t_genres = time.time()
+        try:
+            with open(genres_path, 'r', encoding='utf-8') as gf:
+                for g_line in gf:
+                    g_item = json.loads(g_line)
+                    g_bid = g_item.get('book_id')
+                    g_data = g_item.get('genres')
+                    if g_bid and g_data:
+                        # Extract individual genre names from dictionary keys by splitting commas
+                        clean_list = []
+                        if isinstance(g_data, dict):
+                            for key in g_data.keys():
+                                parts = [p.strip().lower() for p in key.split(',')]
+                                for p in parts:
+                                    if p and p not in clean_list:
+                                        clean_list.append(p)
+                        genres_map[str(g_bid)] = json.dumps(clean_list)
+            print(f"Loaded {len(genres_map):,} genres in {time.time() - t_genres:.2f} seconds.\n")
+        except Exception as ge:
+            print(f"Warning: Failed to load genres file: {ge}\n")
+            
     if os.path.exists(db_path):
         try:
             os.remove(db_path)
@@ -152,6 +268,7 @@ def build_index(data_path, db_path, progress_callback=None):
             is_ebook INTEGER,
             author_ids TEXT,
             popular_shelves TEXT,
+            genres TEXT,
             offset INTEGER,
             length INTEGER,
             raw_json TEXT
@@ -236,6 +353,26 @@ def build_index(data_path, db_path, progress_callback=None):
         # If we don't have offset (JSON array), store raw JSON
         raw_json_val = json.dumps(item) if offset is None else None
         
+        # Combine initial genres with genres extracted from popular shelves
+        genres_val = genres_map.get(str(book_id)) if genres_map else None
+        clean_list = []
+        if genres_val:
+            try:
+                clean_list = json.loads(genres_val)
+            except Exception:
+                clean_list = []
+                
+        if isinstance(shelves, list):
+            for s in shelves:
+                if isinstance(s, dict) and s.get('name'):
+                    name_clean = str(s['name']).strip().lower()
+                    if name_clean in GENRE_KEYWORDS:
+                        mapped = GENRE_KEYWORDS[name_clean]
+                        if mapped not in clean_list:
+                            clean_list.append(mapped)
+                            
+        genres_json = json.dumps(clean_list) if clean_list else None
+        
         batch.append((
             str(book_id),
             title,
@@ -252,6 +389,7 @@ def build_index(data_path, db_path, progress_callback=None):
             is_ebook,
             author_ids_str,
             popular_shelves_str,
+            genres_json,
             offset,
             length,
             raw_json_val
@@ -262,8 +400,8 @@ def build_index(data_path, db_path, progress_callback=None):
                 INSERT OR REPLACE INTO books (
                     book_id, title, description, isbn, isbn13, asin, average_rating, ratings_count,
                     text_reviews_count, publication_year, publisher, language_code,
-                    is_ebook, author_ids, popular_shelves, offset, length, raw_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    is_ebook, author_ids, popular_shelves, genres, offset, length, raw_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', batch)
             conn.commit()
             total_count += len(batch)
@@ -289,8 +427,8 @@ def build_index(data_path, db_path, progress_callback=None):
             INSERT OR REPLACE INTO books (
                 book_id, title, description, isbn, isbn13, asin, average_rating, ratings_count,
                 text_reviews_count, publication_year, publisher, language_code,
-                is_ebook, author_ids, popular_shelves, offset, length, raw_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                is_ebook, author_ids, popular_shelves, genres, offset, length, raw_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', batch)
         conn.commit()
         total_count += len(batch)
@@ -335,7 +473,7 @@ def search_database(db_path, data_path, title_query=None, isbn_query=None, book_
                     rating_min=None, rating_max=None, reviews_min=None,
                     publication_year=None, publication_year_min=None, publication_year_max=None,
                     language_code=None, is_ebook=None, publisher_query=None,
-                    author_id=None, shelf=None, sort_by='popularity', limit=10, offset=0):
+                    author_id=None, shelf=None, genre=None, sort_by='popularity', sort_dir='desc', limit=10, offset=0):
     """
     Searches using the SQLite database.
     Loads matching metadata, resolves actual offsets/raw_json, and parses the original records.
@@ -402,22 +540,33 @@ def search_database(db_path, data_path, title_query=None, isbn_query=None, book_
         params.append(f"%,{author_id},%")
         
     if shelf:
-        query_parts.append("popular_shelves LIKE ?")
-        params.append(f"%,{shelf.lower()},%")
+        # Support comma-separated multiple shelves (AND match)
+        shelves = [s.strip().lower() for s in shelf.split(',') if s.strip()]
+        for sh in shelves:
+            query_parts.append("popular_shelves LIKE ?")
+            params.append(f"%,{sh},%")
         
-    sql = "SELECT offset, length, raw_json FROM books"
+    if genre:
+        # Support comma-separated multiple genres (AND match)
+        genres_query = [g.strip().lower() for g in genre.split(',') if g.strip()]
+        for ge in genres_query:
+            query_parts.append("genres LIKE ?")
+            params.append(f"%{ge}%")
+        
+    sql = "SELECT offset, length, raw_json, genres FROM books"
     if query_parts:
         sql += " WHERE " + " AND ".join(query_parts)
         
     # Sort ordering
+    direction = "ASC" if sort_dir == 'asc' else "DESC"
     if sort_by == 'rating':
-        sql += " ORDER BY average_rating DESC"
+        sql += f" ORDER BY average_rating {direction}"
     elif sort_by == 'reviews':
-        sql += " ORDER BY text_reviews_count DESC"
+        sql += f" ORDER BY text_reviews_count {direction}"
     elif sort_by == 'year':
-        sql += " ORDER BY publication_year DESC"
+        sql += f" ORDER BY publication_year {direction}"
     else: # popularity (ratings_count)
-        sql += " ORDER BY ratings_count DESC"
+        sql += f" ORDER BY ratings_count {direction}"
         
     sql += " LIMIT ? OFFSET ?"
     params.extend([limit, offset])
@@ -437,14 +586,22 @@ def search_database(db_path, data_path, title_query=None, isbn_query=None, book_
                 raise FileNotFoundError(f"Original data file not found at {data_path} (needed to read complete records).")
             f = open(data_path, 'rb')
             
-        for off, length, raw_json in results:
+        for off, length, raw_json, genres_val in results:
+            book = None
             if off is not None and length is not None:
                 f.seek(off)
                 line_bytes = f.read(length)
-                book = json.loads(line_bytes.decode('utf-8'))
-                books.append(normalize_book(book))
+                book = normalize_book(json.loads(line_bytes.decode('utf-8')))
             elif raw_json is not None:
-                books.append(json.loads(raw_json))
+                book = json.loads(raw_json)
+                
+            if book is not None:
+                if genres_val:
+                    try:
+                        book['genres'] = json.loads(genres_val)
+                    except Exception:
+                        pass
+                books.append(book)
     finally:
         if f:
             f.close()
@@ -455,7 +612,7 @@ def search_streaming(data_path, title_query=None, isbn_query=None, book_id_query
                      rating_min=None, rating_max=None, reviews_min=None,
                      publication_year=None, publication_year_min=None, publication_year_max=None,
                      language_code=None, is_ebook=None, publisher_query=None,
-                     author_id=None, shelf=None, sort_by=None, limit=10, offset=0):
+                     author_id=None, shelf=None, genre=None, sort_by=None, sort_dir='desc', limit=10, offset=0):
     """
     Streaming search fallback that scans the file line-by-line.
     Useful for ad-hoc queries when no database index is present.
@@ -542,8 +699,29 @@ def search_streaming(data_path, title_query=None, isbn_query=None, book_id_query
                 continue
                 
         if shelf:
-            shelves = item.get('popular_shelves') or []
-            if not any(str(s.get('name')).lower() == shelf.lower() for s in shelves if isinstance(s, dict)):
+            shelves_query = [s.strip().lower() for s in shelf.split(',') if s.strip()]
+            book_shelves = []
+            if isinstance(item.get('popular_shelves'), list):
+                for s in item.get('popular_shelves'):
+                    if isinstance(s, dict) and s.get('name'):
+                        book_shelves.append(str(s['name']).strip().lower())
+            if not all(sq in book_shelves for sq in shelves_query):
+                continue
+                
+        if genre:
+            genres_query = [g.strip().lower() for g in genre.split(',') if g.strip()]
+            book_genres = item.get('genres') or []
+            if isinstance(book_genres, str):
+                try:
+                    book_genres = json.loads(book_genres)
+                except Exception:
+                    book_genres = []
+            if isinstance(book_genres, dict):
+                book_genres = list(book_genres.keys())
+            book_genres = [bg.lower() for bg in book_genres if isinstance(bg, str)]
+            
+            # Check if all query genres are matched (AND matching)
+            if not all(any(gq in bg for bg in book_genres) for gq in genres_query):
                 continue
                 
         # Match found!
@@ -558,14 +736,15 @@ def search_streaming(data_path, title_query=None, isbn_query=None, book_id_query
                 
     if sort_by and matched_books:
         # Sort matched results locally
+        rev = False if sort_dir == 'asc' else True
         if sort_by == 'rating':
-            matched_books.sort(key=lambda x: float(x.get('average_rating') or 0), reverse=True)
+            matched_books.sort(key=lambda x: float(x.get('average_rating') or 0), reverse=rev)
         elif sort_by == 'reviews':
-            matched_books.sort(key=lambda x: int(x.get('text_reviews_count') or 0), reverse=True)
+            matched_books.sort(key=lambda x: int(x.get('text_reviews_count') or 0), reverse=rev)
         elif sort_by == 'year':
-            matched_books.sort(key=lambda x: int(x.get('publication_year') or 0) if x.get('publication_year') else 0, reverse=True)
+            matched_books.sort(key=lambda x: int(x.get('publication_year') or 0) if x.get('publication_year') else 0, reverse=rev)
         else: # popularity
-            matched_books.sort(key=lambda x: int(x.get('ratings_count') or 0) if x.get('ratings_count') else 0, reverse=True)
+            matched_books.sort(key=lambda x: int(x.get('ratings_count') or 0) if x.get('ratings_count') else 0, reverse=rev)
         # Apply limit after sorting
         matched_books = matched_books[:limit]
         
@@ -611,12 +790,24 @@ def pretty_print_books(books):
                     shelves_list.append(f"{s['name']}{cnt}")
         shelves_str = ", ".join(shelves_list) if shelves_list else "N/A"
         
+        # genres
+        genres = book.get('genres') or []
+        if isinstance(genres, list):
+            genres_list = genres
+        elif isinstance(genres, dict):
+            genres_list = list(genres.keys())
+        else:
+            genres_list = []
+        genres_str = ", ".join(genres_list) if genres_list else "N/A"
+        
         print(f"[{idx}] {title}")
         print(f"    Book ID : {book_id} | ISBN: {isbn}")
         print(f"    Authors : {authors_str}")
         print(f"    Rating  : {avg_rating} | Ratings Count: {int(ratings_count):,} | Reviews Count: {int(book.get('text_reviews_count') or 0):,}")
         print(f"    Details : Lang: {lang} | Format: {fmt} | Publisher: {pub} | Year: {year}")
         print(f"    Shelves : {shelves_str}")
+        if genres_str != "N/A":
+            print(f"    Genres  : {genres_str}")
         if book.get('link') or book.get('url'):
             print(f"    Link    : {book.get('link') or book.get('url')}")
             
@@ -658,11 +849,14 @@ def main():
     parser.add_argument("--no-ebook", action="store_false", dest="ebook", help="Filter out ebooks.")
     parser.add_argument("--publisher", help="Publisher name contains this string.")
     parser.add_argument("--author", help="Author ID.")
-    parser.add_argument("--shelf", help="Popular shelf name contains this tag.")
+    parser.add_argument("--shelf", help="Comma-separated popular shelf names (all must match).")
+    parser.add_argument("--genre", help="Comma-separated genres (all must match).")
     
     # Sorting and Pagination
     parser.add_argument("--sort", choices=['rating', 'reviews', 'year', 'popularity'], default='popularity',
                         help="Sort by criteria (popularity uses ratings_count). Default: popularity.")
+    parser.add_argument("--sort-dir", choices=['asc', 'desc'], default='desc',
+                        help="Sort direction: 'asc' or 'desc'. Default: desc.")
     parser.add_argument("--limit", type=int, default=10, help="Maximum number of results to return. Default: 10.")
     parser.add_argument("--offset", type=int, default=0, help="Offset for pagination. Default: 0.")
     
@@ -676,7 +870,7 @@ def main():
     if not any([args.build_index, args.status, args.search, args.id, args.isbn,
                 args.rating_min, args.rating_max, args.reviews_min, args.year,
                 args.year_min, args.year_max, args.lang, args.ebook is not None,
-                args.publisher, args.author, args.shelf]):
+                args.publisher, args.author, args.shelf, args.genre]):
         parser.print_help()
         print("\nIndex Status:")
         exists, msg = check_index_status(args.db_path)
@@ -724,7 +918,9 @@ def main():
                 publisher_query=args.publisher,
                 author_id=args.author,
                 shelf=args.shelf,
+                genre=args.genre,
                 sort_by=args.sort,
+                sort_dir=args.sort_dir,
                 limit=args.limit,
                 offset=args.offset
             )
@@ -745,7 +941,9 @@ def main():
                 publisher_query=args.publisher,
                 author_id=args.author,
                 shelf=args.shelf,
+                genre=args.genre,
                 sort_by=args.sort if (args.sort or any([args.rating_min, args.rating_max])) else None,
+                sort_dir=args.sort_dir,
                 limit=args.limit,
                 offset=args.offset
             )
