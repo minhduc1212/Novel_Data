@@ -51,35 +51,30 @@ graph TD
 * **Goal**: Automatically scans the execution logs (`goodreads_scraper.log`).
 * **Logic**: Extracts ISBNs that failed solely because of temporary `403 Forbidden` WAF challenges and cleanses them from `failed_isbns` in `goodreads_checkpoint.json`. This permits them to be retried on subsequent scraping passes instead of being permanently skipped.
 
-### 4. Genre Extraction, Cleaning & Enrichment ([goodreads_genres.py](file:///D:/LT/Novel_data/goodreads_genres.py))
-* **Goal**: Cleanses, standardizes, and adds comprehensive genres to the SQLite database.
-* **Ingestion**: Processes `goodreads_book_genres_initial.json` (190MB JSON Lines file).
-* **Cleaning & Standardizing**:
-  - Splits compound/multi-category keys (e.g., `"fantasy, paranormal"`, `"mystery, thriller, crime"`) by commas into distinct individual genre names.
-  - Removes vote count numbers (e.g. `(54156)`) to store clean textual labels.
-* **Enrichment from Shelves**:
-  - Cross-references the book's `popular_shelves` column (representing raw user shelf tags) using a comprehensive mapping (`GENRE_KEYWORDS`).
-  - Automatically extracts and standardizes additional genres (e.g., mapping tags like `middle-grade` to `middle grade`, `classic` to `classics`, `sci-fi-fantasy` to `science fiction`, `supernatural` to `supernatural`).
-  - Combines these with the initial genres list, keeping the primary/original categories first and removing duplicates.
-* **Database Updates**: Stores the resulting clean genres list as a JSON array of strings in the `genres` column of the `books` table. Backfills matching database entries efficiently (updates 1.98M books in ~105 seconds).
+### 4. Structured Classification & Enrichment ([goodreads_genres.py](file:///D:/LT/Novel_data/goodreads_genres.py))
+* **Goal**: Cleanses, standardizes, and classifies book genres into distinct dimensions: **Genres**, **Themes & Tropes**, and **Target Audiences / Formats** stored in the database.
+* **Ingestion**: Processes `goodreads_book_genres_initial.json` (190MB JSON Lines file) and database records.
+* **Multi-Dimensional Classification**:
+  - **Blacklist Filter**: Discards formatting/status noise tags (like `ebook`, `audiobook`, `calibre`, `read-in-2016`, `tbr`, `standalone`) by checking shelves against a comprehensive `BLACKLIST_KEYWORDS` array.
+  - **Shelf Mapping & Classification**: Decides whether a tag is a core genre, a theme/trope, or a target audience/format based on the `SHELF_CLASSIFICATION` mapping.
+  - **Structured Storage**: Encodes classifications as a structured JSON object in the SQLite `genres` column: `{"genres": [...], "themes": [...], "audiences": [...]}`.
+* **Database Updates**: Efficiently backfills the database in batches, classifying and updating **2,006,966 book records**.
 
 ### 5. High-Performance SQLite Search Engine ([goodreads_search.py](file:///D:/LT/Novel_data/goodreads_search.py))
-* **Indexing**: Indexes JSON datasets into a local SQLite database (`goodreads_books.db`) using transaction batching. Includes the `genres` column during index rebuilding, automatically applying the genre-enrichment mapping.
-* **Filtering & Sorting**: 
-  - Supports filtering by title, description, ISBN/ASIN, average rating, reviews count, publication year bounds, ebooks, authors, and publishers.
-  - **Multi-Value AND Filtering**: Supports comma-separated tag lists for both `--shelf` and `--genre` arguments. Searches are translated into relational `AND` statements (e.g., `--genre "fantasy, young-adult"`) ensuring books match all query elements.
+* **Indexing**: Rebuilds the SQLite database index from the raw JSON file while compiling structured classifications.
+* **Multi-Dimensional AND Filtering**: 
+  - Translates queries using SQLite's native `json_extract()` functions (e.g. `json_extract(genres, '$.themes') LIKE '%"magic"%'`) for high-performance `AND`-matching.
+  - Supports `--genre`, `--theme`, and `--audience` CLI arguments, each allowing multiple comma-separated values matching all terms (AND logic).
   - **Sort Inversion**: Supports choosing sorting directions via `--sort-dir asc` (worst-to-best / inverse rating) or `--sort-dir desc` (best-to-worst / default).
-* **Storage Modes**:
-  - **JSON Lines format**: Stores byte offsets and length markers in the database for zero-memory seek queries back into the main text data.
-  - **Standard JSON Array**: Fallback stores raw JSON records directly in the SQLite database columns.
+  - **Streaming Fallback**: Parses and builds structured classifications on the fly if running in streaming mode (without SQLite index).
 
 ### 6. CustomTkinter Desktop GUI ([goodreads_ui.py](file:///D:/LT/Novel_data/goodreads_ui.py))
 * **User Interface**: Built on [customtkinter](https://github.com/TomSchimansky/CustomTkinter) featuring a modern dark theme layout.
 * **Features**:
-  - **Interactive Results**: Displays paginated book cards showing description excerpts, rating stars, details, and cleaned genres.
-  - **Filters Sidebar**: Provides slider controls (Average Rating), range entries (Publication Year bounds), menus (Language codes, Ebook formats), and tag entries. Includes a dedicated **Genre** entry field supporting comma-separated multi-genre `AND` filters (e.g. `fiction, young-adult`).
-  - **Sort Order & Direction**: Includes dropdown options for sort criteria (Popularity, Average Rating, Reviews Count, Publish Year) paired with a sort direction dropdown menu supporting `Desc (High to Low)` and `Asc (Low to High)` ordering.
-  - **Book Details**: Displays detailed book info in a popup modal, combining popular shelves and cleaned genres into a formatted "Shelves & Genres" scroll panel.
+  - **Interactive Results**: Displays paginated book cards showing description excerpts, rating stars, and details.
+  - **Filters Sidebar**: Replaces the single generic genre input with three distinct sidebar search entry fields: **Genre**, **Theme & Trope**, and **Audience / Format** supporting comma-separated `AND` queries.
+  - **Detailed Card View**: Renders the cleaned Genres, Themes, and Audiences separately on result cards.
+  - **Book Details**: Displays detailed book info in a popup modal, grouping classifications under distinct *Genres*, *Themes & Tropes*, and *Target Audience / Format* sections.
 
 ---
 
@@ -144,6 +139,10 @@ python goodreads_data.py --threads 4 --delay-min 3.0 --delay-max 6.0 --headless 
    ```
 
 ### Step 4: Perform Searches via CLI
+* Search books matching multiple classification filters: core genre `fantasy`, theme `magic` and `grimdark`, sorted by rating (best-to-worst):
+  ```bash
+  python goodreads_search.py --genre "fantasy" --theme "magic, grimdark" --sort rating --sort-dir desc --limit 5
+  ```
 * Search books by genre matching both "fantasy" and "young-adult", sorted by ratings from best to worst:
   ```bash
   python goodreads_search.py --genre "fantasy, young-adult" --sort rating --sort-dir desc --limit 5

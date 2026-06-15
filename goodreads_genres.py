@@ -6,121 +6,236 @@ import time
 goodreads_genres_path = "D:\\LT\\data\\goodreads_book_genres_initial.json"
 db_path = "goodreads_books.db"
 
-# Comprehensive dictionary mapping common shelf names to standard genres
-GENRE_KEYWORDS = {
-    # Fantasy, Sci-Fi & Paranormal
-    'fantasy': 'fantasy',
-    'urban-fantasy': 'fantasy',
-    'ya-fantasy': 'fantasy',
-    'magic': 'fantasy',
-    'wizards': 'fantasy',
-    'paranormal': 'paranormal',
-    'supernatural': 'supernatural',
-    'sci-fi': 'science fiction',
-    'science-fiction': 'science fiction',
-    'scifi': 'science fiction',
-    'sci-fi-fantasy': 'science fiction',
-    'scifi-fantasy': 'science fiction',
-    'science-fiction-fantasy': 'science fiction',
-    'fantasy-sci-fi': 'science fiction',
-    'high-fantasy': 'fantasy',
-    'epic-fantasy': 'fantasy',
-    'dystopian': 'dystopia',
-    'dystopia': 'dystopia',
-    'steampunk': 'steampunk',
-    'cyberpunk': 'cyberpunk',
+# List of keywords that definitely indicate a shelf is NOT a genre.
+# If a shelf name contains any of these substrings, it will be skipped.
+BLACKLIST_KEYWORDS = [
+    'read', 'own', 'default', 'wish', 'give', 'gave', 'finish', 'dnf', 
+    'abandon', 'hold', 'maybe', 'library', 'kindle', 'calibre', 'audible', 
+    'e-book', 'ebook', 'favour', 'favor', 'fave', 'favs', 'have', 'tbr', 
+    'recommend', 'series', 'english', 'british', 'canadian', 'american', 
+    'german', 'french', 'spanish', 'translat', 'novel', 'book', 'audio', 
+    'shelf', 'shelves', 'buy', 'purchase', 'borrow', 'list', 'queue', 
+    'progress', 'status', 'start', 'end', 'year', 'month', 'date', 'star',
+    'rating', 'review', 'club', 'group', 'collection', 'mine', 'personal',
+    'physical', 'paperback', 'hardcover', 'hardback', 'tome', 'format',
+    'copy', 'copies', 'pile', 'stack', 'current', 'keep', 'track', 'goal',
+    'challenge', 'select', 'pick', 'choice', 'chose', 'author', 'writer',
+    'illustrator', 'page', 'pages', 'chapter', 'chapters', 'pub', 'print',
+    'edition', 'cover', 'arc', 'nook', 'netgalley', 'stand-alone', 'standalone',
+    'amazon', 'freebie', 'free', 'to-get', 'want', 'other', 'not-interested'
+]
+
+# Classification mapping of popular shelf tags to standard categories (genres, themes, audiences)
+SHELF_CLASSIFICATION = {
+    # --- MAIN GENRES ---
+    'fantasy': ('genres', 'fantasy'),
+    'fantasía': ('genres', 'fantasy'),
+    'fantasia': ('genres', 'fantasy'),
+    'urban-fantasy': ('genres', 'urban fantasy'),
+    'dark-fantasy': ('genres', 'dark fantasy'),
+    'military-fantasy': ('genres', 'military fantasy'),
+    'high-fantasy': ('genres', 'high fantasy'),
+    'epic-fantasy': ('genres', 'epic fantasy'),
+    'fantasy-epic': ('genres', 'epic fantasy'),
+    'adult-fantasy': ('genres', 'adult fantasy'),
+    'historical-fantasy': ('genres', 'historical fantasy'),
     
-    # Fiction & Literature
-    'fiction': 'fiction',
-    'novel': 'fiction',
-    'novels': 'fiction',
-    'ya-fiction': 'fiction',
-    'classics': 'classics',
-    'classic': 'classics',
-    'contemporary': 'contemporary',
-    'drama': 'drama',
-    'poetry': 'poetry',
-    'chick-lit': 'chick lit',
-    'literary-fiction': 'fiction',
+    'sci-fi': ('genres', 'science fiction'),
+    'science-fiction': ('genres', 'science fiction'),
+    'scifi': ('genres', 'science fiction'),
+    'sff': ('genres', 'sci-fi & fantasy'),
+    'sci-fi-fantasy': ('genres', 'sci-fi & fantasy'),
+    'scifi-fantasy': ('genres', 'sci-fi & fantasy'),
+    'science-fiction-fantasy': ('genres', 'sci-fi & fantasy'),
+    'fantasy-sci-fi': ('genres', 'sci-fi & fantasy'),
+    'fantasy-scifi': ('genres', 'sci-fi & fantasy'),
+    'sf-fantasy': ('genres', 'sci-fi & fantasy'),
+    'sci-fi-and-fantasy': ('genres', 'sci-fi & fantasy'),
     
-    # Mystery, Thriller, Horror & Crime
-    'mystery': 'mystery',
-    'thriller': 'thriller',
-    'crime': 'crime',
-    'detective': 'mystery',
-    'suspense': 'thriller',
-    'horror': 'horror',
-    'gothic': 'horror',
-    'mystery-thriller': 'mystery',
+    'fiction': ('genres', 'fiction'),
+    'general-fiction': ('genres', 'general fiction'),
+    'contemporary-fiction': ('genres', 'contemporary fiction'),
+    'literary-fiction': ('genres', 'literary fiction'),
+    'classics': ('genres', 'classics'),
+    'classic': ('genres', 'classics'),
+    'contemporary': ('genres', 'contemporary'),
     
-    # Age Groups
-    'young-adult': 'young adult',
-    'ya': 'young adult',
-    'teen': 'young adult',
-    'youth': 'young adult',
-    'middle-grade': 'middle grade',
-    'children': 'children',
-    'childrens': 'children',
-    'children-s': 'children',
-    'kids': 'children',
-    'kids-books': 'children',
-    'childrens-books': 'children',
-    'children-s-books': 'children',
-    'juvenile': 'children',
-    'children-s-literature': 'children',
-    'children-s-lit': 'children',
-    'childhood-books': 'children',
+    'mystery': ('genres', 'mystery'),
+    'mysteries': ('genres', 'mystery'),
+    'detective': ('genres', 'mystery'),
+    'mystery-thriller': ('genres', 'mystery'),
+    'mystery-suspense': ('genres', 'mystery'),
+    'mystery-crime': ('genres', 'mystery'),
+    'thriller': ('genres', 'thriller'),
+    'thrillers': ('genres', 'thriller'),
+    'suspense': ('genres', 'thriller'),
+    'crime': ('genres', 'crime'),
+    'crime-fiction': ('genres', 'crime'),
     
-    # Action, Adventure & Romance
-    'adventure': 'adventure',
-    'romance': 'romance',
-    'romantic': 'romance',
-    'historical-romance': 'romance',
+    'romance': ('genres', 'romance'),
+    'romantic': ('genres', 'romance'),
+    'historical-romance': ('genres', 'historical romance'),
+    'paranormal-romance': ('genres', 'paranormal romance'),
+    'contemporary-romance': ('genres', 'contemporary romance'),
+    'erotica': ('genres', 'erotica'),
     
-    # Historical & Non-fiction
-    'historical-fiction': 'historical fiction',
-    'history': 'history',
-    'historical': 'history',
-    'biography': 'biography',
-    'memoir': 'biography',
-    'autobiography': 'biography',
-    'non-fiction': 'non-fiction',
-    'nonfiction': 'non-fiction',
+    'horror': ('genres', 'horror'),
+    'gothic': ('genres', 'horror'),
     
-    # Others
-    'humor': 'comedy',
-    'comedy': 'comedy',
-    'graphic-novel': 'graphic novel',
-    'manga': 'manga',
-    'comic': 'comics',
-    'comics': 'comics'
+    'adventure': ('genres', 'adventure'),
+    'action': ('genres', 'adventure'),
+    'action-adventure': ('genres', 'adventure'),
+    
+    'historical-fiction': ('genres', 'historical fiction'),
+    'historical': ('genres', 'historical fiction'),
+    'history': ('genres', 'history'),
+    
+    'biography': ('genres', 'biography'),
+    'memoir': ('genres', 'memoir'),
+    'autobiography': ('genres', 'biography'),
+    'non-fiction': ('genres', 'non-fiction'),
+    'nonfiction': ('genres', 'non-fiction'),
+    
+    'poetry': ('genres', 'poetry'),
+    'drama': ('genres', 'drama'),
+    'plays': ('genres', 'drama'),
+    'humor': ('genres', 'comedy'),
+    'humour': ('genres', 'comedy'),
+    'comedy': ('genres', 'comedy'),
+    'funny': ('genres', 'comedy'),
+    
+    'religion': ('genres', 'religion'),
+    'theology': ('genres', 'religion'),
+    'philosophy': ('genres', 'philosophy'),
+    'psychology': ('genres', 'psychology'),
+    'politics': ('genres', 'politics'),
+    'sociology': ('genres', 'sociology'),
+    
+    # --- THEMES & TROPES ---
+    'magic': ('themes', 'magic'),
+    'wizards': ('themes', 'wizards'),
+    'wizards-witches': ('themes', 'wizards'),
+    'dragons': ('themes', 'dragons'),
+    'elves': ('themes', 'elves'),
+    'paranormal': ('themes', 'paranormal'),
+    'supernatural': ('themes', 'supernatural'),
+    'vampires': ('themes', 'vampires'),
+    'vampire': ('themes', 'vampires'),
+    'werewolves': ('themes', 'werewolves'),
+    'zombies': ('themes', 'zombies'),
+    'ghosts': ('themes', 'ghosts'),
+    
+    'dystopian': ('themes', 'dystopia'),
+    'dystopia': ('themes', 'dystopia'),
+    'steampunk': ('themes', 'steampunk'),
+    'cyberpunk': ('themes', 'cyberpunk'),
+    'time-travel': ('themes', 'time travel'),
+    'space-opera': ('themes', 'space opera'),
+    'apocalypse': ('themes', 'apocalyptic'),
+    'post-apocalypse': ('themes', 'post-apocalyptic'),
+    'post-apocalyptic': ('themes', 'post-apocalyptic'),
+    
+    'war': ('themes', 'war'),
+    'military': ('themes', 'military'),
+    'grimdark': ('themes', 'grimdark'),
+    'dark': ('themes', 'dark'),
+    'coming-of-age': ('themes', 'coming of age'),
+    'family': ('themes', 'family'),
+    'school': ('themes', 'school'),
+    'love': ('themes', 'love'),
+    'friendship': ('themes', 'friendship'),
+    'lgbtq': ('themes', 'lgbtq'),
+    'queer': ('themes', 'lgbtq'),
+    'lgbt': ('themes', 'lgbtq'),
+    'mythology': ('themes', 'mythology'),
+    'myths': ('themes', 'mythology'),
+    'folklore': ('themes', 'folklore'),
+    'fairy-tales': ('themes', 'fairy tales'),
+    'fairy-tale': ('themes', 'fairy tales'),
+    
+    # --- AUDIENCES & FORMATS ---
+    'young-adult': ('audiences', 'young adult'),
+    'ya': ('audiences', 'young adult'),
+    'teen': ('audiences', 'young adult'),
+    'youth': ('audiences', 'young adult'),
+    'ya-fiction': ('audiences', 'young adult'),
+    'middle-grade': ('audiences', 'middle grade'),
+    'children': ('audiences', 'children'),
+    'childrens': ('audiences', 'children'),
+    'children-s': ('audiences', 'children'),
+    'kids': ('audiences', 'children'),
+    'kids-books': ('audiences', 'children'),
+    'childrens-books': ('audiences', 'children'),
+    'children-s-books': ('audiences', 'children'),
+    'juvenile': ('audiences', 'children'),
+    'children-s-literature': ('audiences', 'children'),
+    'children-s-lit': ('audiences', 'children'),
+    'childhood-books': ('audiences', 'children'),
+    'childhood': ('audiences', 'children'),
+    'new-adult': ('audiences', 'new adult'),
+    'adult': ('audiences', 'adult'),
+    'adult-fiction': ('audiences', 'adult'),
+    
+    'short-stories': ('audiences', 'short stories'),
+    'short-story': ('audiences', 'short stories'),
+    'graphic-novel': ('audiences', 'graphic novel'),
+    'manga': ('audiences', 'manga'),
+    'comic': ('audiences', 'comics'),
+    'comics': ('audiences', 'comics')
 }
 
-def clean_shelves_to_genres(shelves_str):
+def clean_shelves_to_structured(shelves_str, initial_genres_list):
     """
-    Splits the comma-separated popular shelves string and maps matches to clean genre names.
+    Cleans tags and populates them into structured lists (genres, themes, audiences).
     """
-    if not shelves_str:
-        return []
-    extracted = []
-    # Split the comma-separated string from the SQLite database
-    parts = [p.strip().lower() for p in shelves_str.split(',') if p.strip()]
-    for p in parts:
-        if p in GENRE_KEYWORDS:
-            mapped = GENRE_KEYWORDS[p]
-            if mapped not in extracted:
-                extracted.append(mapped)
-    return extracted
+    genres = []
+    themes = []
+    audiences = []
+    
+    # Start with initial genres (defaulted as main genres, unless mapped otherwise)
+    for g in initial_genres_list:
+        g_clean = g.strip().lower()
+        if g_clean in SHELF_CLASSIFICATION:
+            cat, val = SHELF_CLASSIFICATION[g_clean]
+            if cat == 'genres' and val not in genres:
+                genres.append(val)
+            elif cat == 'themes' and val not in themes:
+                themes.append(val)
+            elif cat == 'audiences' and val not in audiences:
+                audiences.append(val)
+        else:
+            if g.strip() and g.strip() not in genres:
+                genres.append(g.strip())
+                
+    if shelves_str:
+        # Split popular shelves
+        parts = [p.strip().lower() for p in shelves_str.split(',') if p.strip()]
+        for p in parts:
+            # Check blacklist
+            is_blacklisted = False
+            for bl_word in BLACKLIST_KEYWORDS:
+                if bl_word in p:
+                    is_blacklisted = True
+                    break
+            if is_blacklisted:
+                continue
+                
+            if p in SHELF_CLASSIFICATION:
+                cat, val = SHELF_CLASSIFICATION[p]
+                if cat == 'genres' and val not in genres:
+                    genres.append(val)
+                elif cat == 'themes' and val not in themes:
+                    themes.append(val)
+                elif cat == 'audiences' and val not in audiences:
+                    audiences.append(val)
+                    
+    return {
+        "genres": genres,
+        "themes": themes,
+        "audiences": audiences
+    }
 
 def add_genres_to_db():
-    """
-    Imports and cleans the genres database.
-    1. Loads all book IDs and popular shelves from SQLite.
-    2. Combines initial JSONL genres (with comma splitting and removing vote counts)
-       with mapped genres extracted from the popular shelves.
-    3. Backfills any remaining books in the database using their popular shelves.
-    4. Commits all changes in fast transactions.
-    """
     if not os.path.exists(goodreads_genres_path):
         print(f"Error: Genres file not found at {goodreads_genres_path}")
         return False
@@ -143,8 +258,6 @@ def add_genres_to_db():
         print("Adding 'genres' column to the 'books' table...")
         cursor.execute("ALTER TABLE books ADD COLUMN genres TEXT")
         conn.commit()
-    else:
-        print("'genres' column already exists in 'books' table.")
         
     # 1. Fetch popular_shelves from database
     print("Fetching popular_shelves from database...")
@@ -155,8 +268,8 @@ def add_genres_to_db():
         db_books[str(bid)] = shelves_str
     print(f"Loaded {len(db_books):,} books from DB in {time.time() - t_fetch:.2f} seconds.")
     
-    # 2. Read initial genres and combine with shelf-extracted genres
-    print("Reading genres file and combining with popular shelves...")
+    # 2. Read initial genres and combine into structured objects
+    print("Reading genres file and compiling structured classifications...")
     t0 = time.time()
     updated_genres = {}
     total_lines = 0
@@ -170,33 +283,30 @@ def add_genres_to_db():
                 genres_data = item.get('genres')
                 
                 # Extract initial genres from dict keys
-                clean_list = []
+                initial_list = []
                 if isinstance(genres_data, dict):
                     for key in genres_data.keys():
                         parts = [p.strip().lower() for p in key.split(',')]
                         for p in parts:
-                            if p and p not in clean_list:
-                                clean_list.append(p)
+                            if p and p not in initial_list:
+                                initial_list.append(p)
                                 
-                # Combine with genres from popular_shelves
+                # Compile structured dict combining initial genres and shelves
                 shelves_str = db_books.get(book_id)
-                shelf_genres = clean_shelves_to_genres(shelves_str)
-                for sg in shelf_genres:
-                    if sg not in clean_list:
-                        clean_list.append(sg)
-                        
-                if clean_list:
-                    updated_genres[book_id] = clean_list
+                structured = clean_shelves_to_structured(shelves_str, initial_list)
+                
+                if structured["genres"] or structured["themes"] or structured["audiences"]:
+                    updated_genres[book_id] = structured
             except Exception:
                 continue
                 
-    # 3. For books in DB that were NOT in genres file, extract genres from shelves
+    # 3. For books in DB that were NOT in genres file, extract from shelves
     print("Processing remaining books in DB...")
     for book_id, shelves_str in db_books.items():
         if book_id not in updated_genres:
-            shelf_genres = clean_shelves_to_genres(shelves_str)
-            if shelf_genres:
-                updated_genres[book_id] = shelf_genres
+            structured = clean_shelves_to_structured(shelves_str, [])
+            if structured["genres"] or structured["themes"] or structured["audiences"]:
+                updated_genres[book_id] = structured
                 
     # 4. Update SQLite database in batches
     print("Updating SQLite database in batches...")
@@ -204,8 +314,8 @@ def add_genres_to_db():
     batch_size = 50000
     updated_count = 0
     
-    for book_id, genres_list in updated_genres.items():
-        batch.append((json.dumps(genres_list), book_id))
+    for book_id, structured_dict in updated_genres.items():
+        batch.append((json.dumps(structured_dict), book_id))
         if len(batch) >= batch_size:
             cursor.executemany("UPDATE books SET genres = ? WHERE book_id = ?", batch)
             conn.commit()

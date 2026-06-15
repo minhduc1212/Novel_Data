@@ -187,8 +187,20 @@ class GoodreadsApp(customtkinter.CTk):
         # Genre Filter
         self.genre_label = customtkinter.CTkLabel(self.filters_scroll, text="Genre", font=customtkinter.CTkFont(size=12))
         self.genre_label.pack(anchor="w", padx=5, pady=(5, 2))
-        self.genre_entry = customtkinter.CTkEntry(self.filters_scroll, placeholder_text="e.g. fiction, young-adult")
+        self.genre_entry = customtkinter.CTkEntry(self.filters_scroll, placeholder_text="e.g. fantasy, romance")
         self.genre_entry.pack(fill="x", padx=5, pady=(0, 10))
+
+        # Theme & Trope Filter
+        self.theme_label = customtkinter.CTkLabel(self.filters_scroll, text="Theme & Trope", font=customtkinter.CTkFont(size=12))
+        self.theme_label.pack(anchor="w", padx=5, pady=(5, 2))
+        self.theme_entry = customtkinter.CTkEntry(self.filters_scroll, placeholder_text="e.g. magic, grimdark")
+        self.theme_entry.pack(fill="x", padx=5, pady=(0, 10))
+
+        # Audience / Format Filter
+        self.audience_label = customtkinter.CTkLabel(self.filters_scroll, text="Audience / Format", font=customtkinter.CTkFont(size=12))
+        self.audience_label.pack(anchor="w", padx=5, pady=(5, 2))
+        self.audience_entry = customtkinter.CTkEntry(self.filters_scroll, placeholder_text="e.g. young adult, manga")
+        self.audience_entry.pack(fill="x", padx=5, pady=(0, 10))
 
         # Author ID Filter
         self.author_label = customtkinter.CTkLabel(self.filters_scroll, text="Author ID", font=customtkinter.CTkFont(size=12))
@@ -357,6 +369,8 @@ class GoodreadsApp(customtkinter.CTk):
         self.ebook_menu.set("All Formats")
         self.shelf_entry.delete(0, "end")
         self.genre_entry.delete(0, "end")
+        self.theme_entry.delete(0, "end")
+        self.audience_entry.delete(0, "end")
         self.author_entry.delete(0, "end")
         self.publisher_entry.delete(0, "end")
 
@@ -505,6 +519,14 @@ class GoodreadsApp(customtkinter.CTk):
         if not genre:
             genre = None
 
+        theme = self.theme_entry.get().strip()
+        if not theme:
+            theme = None
+
+        audience = self.audience_entry.get().strip()
+        if not audience:
+            audience = None
+
         author = self.author_entry.get().strip()
         if not author:
             author = None
@@ -543,6 +565,8 @@ class GoodreadsApp(customtkinter.CTk):
             "is_ebook": is_ebook,
             "shelf": shelf,
             "genre": genre,
+            "theme": theme,
+            "audience": audience,
             "author_id": author,
             "publisher_query": publisher,
             "sort_by": sort_by,
@@ -706,27 +730,40 @@ class GoodreadsApp(customtkinter.CTk):
         )
         meta2_lbl.grid(row=2, column=0, columnspan=2, sticky="w", padx=15, pady=2)
 
-        # Resolve genres
-        genres = book.get('genres') or []
-        if isinstance(genres, list):
-            genres_list = genres
-        elif isinstance(genres, dict):
-            genres_list = list(genres.keys())
-        else:
-            genres_list = []
+        # Resolve genres, themes, audiences
+        genres_data = book.get('genres') or {}
+        genres_list = []
+        themes_list = []
+        audiences_list = []
+        
+        if isinstance(genres_data, dict):
+            genres_list = genres_data.get('genres') or []
+            themes_list = genres_data.get('themes') or []
+            audiences_list = genres_data.get('audiences') or []
+        elif isinstance(genres_data, list):
+            genres_list = genres_data
+            
         genres_str = ", ".join(genres_list) if genres_list else ""
+        themes_str = ", ".join(themes_list) if themes_list else ""
+        audiences_str = ", ".join(audiences_list) if audiences_list else ""
 
         # Metadata Row 3: Format, Pub, Year, Language, Shelves
         details_str = f"Language: {lang}  •  Format: {fmt}  •  Publisher: {pub} ({year})  •  Shelves: {shelves_str}"
         if genres_str:
-            details_str += f"  •  Genres: {genres_str}"
+            details_str += f"\nGenres: {genres_str}"
+        if themes_str:
+            details_str += f"  •  Themes: {themes_str}"
+        if audiences_str:
+            details_str += f"  •  Audience: {audiences_str}"
             
         meta3_lbl = customtkinter.CTkLabel(
             card_frame,
             text=details_str,
             font=customtkinter.CTkFont(size=11),
             text_color="#B5B5B5",
-            anchor="w"
+            anchor="w",
+            justify="left",
+            wraplength=800
         )
         meta3_lbl.grid(row=3, column=0, columnspan=2, sticky="w", padx=15, pady=(2, 10))
 
@@ -934,7 +971,7 @@ class DetailPopup(customtkinter.CTkToplevel):
         shelves_lbl.pack(anchor="w", padx=10, pady=5)
         
         shelves = book.get('popular_shelves') or []
-        genres = book.get('genres') or []
+        genres_data = book.get('genres') or {}
         
         shelves_box = customtkinter.CTkTextbox(shelves_sub, height=100, font=customtkinter.CTkFont(size=11))
         shelves_box.pack(fill="both", expand=True, padx=10, pady=(0, 10))
@@ -946,20 +983,32 @@ class DetailPopup(customtkinter.CTkToplevel):
                 shelves_list.append(f"• {s['name']}{cnt}")
                 
         genres_list = []
-        if isinstance(genres, list):
-            for g in genres:
-                genres_list.append(f"• {g}")
-        elif isinstance(genres, dict):
-            for k in genres.keys():
-                genres_list.append(f"• {k}")
-                
+        themes_list = []
+        audiences_list = []
+        
+        if isinstance(genres_data, dict):
+            genres_list = genres_data.get('genres') or []
+            themes_list = genres_data.get('themes') or []
+            audiences_list = genres_data.get('audiences') or []
+        elif isinstance(genres_data, list):
+            genres_list = genres_data
+            
         text_content = ""
         if shelves_list:
             text_content += "Popular Shelves:\n" + "\n".join(shelves_list)
+            
+        categories_list = []
         if genres_list:
+            categories_list.append("Genres:\n" + "\n".join([f"• {g}" for g in genres_list]))
+        if themes_list:
+            categories_list.append("Themes & Tropes:\n" + "\n".join([f"• {t}" for t in themes_list]))
+        if audiences_list:
+            categories_list.append("Target Audience / Format:\n" + "\n".join([f"• {a}" for a in audiences_list]))
+            
+        if categories_list:
             if text_content:
                 text_content += "\n\n"
-            text_content += "Genres:\n" + "\n".join(genres_list)
+            text_content += "\n\n".join(categories_list)
             
         if not text_content:
             text_content = "No popular shelves or genres information."
