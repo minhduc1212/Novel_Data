@@ -168,6 +168,18 @@ To scan Goodreads monthly releases from 2017 to 2026, identify missing books, an
 python goodreads_autoget.py
 ```
 
+### Step 7: Crawl and Merge Hardcover Data
+1. **Crawl Hardcover books**:
+   Starts crawling all books page-by-page from Hardcover API in parallel and saves them directly to CSV and JSON formats:
+   ```bash
+   python hardcover_api.py
+   ```
+2. **Merge to Goodreads SQLite Index**:
+   Runs the batch merge script to enrich existing books with cover images (URLs, colors, sizes), moods, and missing genres, and adds any new books directly to the database:
+   ```bash
+   python merge_goodreads_hardcover.py
+   ```
+
 ---
 
 ## 📂 Codebase Details
@@ -175,6 +187,8 @@ python goodreads_autoget.py
 *   [ol_data.py](file:///D:/LT/Novel_data/ol_data.py): Open Library extraction and ISBN generation script.
 *   [goodreads_data.py](file:///D:/LT/Novel_data/goodreads_data.py): Main multi-threaded scraping script using Chromium controls and proxy relays.
 *   [goodreads_autoget.py](file:///D:/LT/Novel_data/goodreads_autoget.py): Auto-get script which logs into Gmail, crawls monthly new releases from 2017 to 2026, and inserts missing books into the database.
+*   [hardcover_api.py](file:///D:/LT/Novel_data/hardcover_api.py): Automated multi-threaded crawler script to pull structured books, authors, and cover metadata from the Hardcover GraphQL API.
+*   [merge_goodreads_hardcover.py](file:///D:/LT/Novel_data/merge_goodreads_hardcover.py): Integration and merge tool that synchronizes Hardcover cover designs, moods, and new books into the Goodreads SQLite database.
 *   [clean_checkpoint.py](file:///D:/LT/Novel_data/clean_checkpoint.py): Script to clear temporary network/WAF failure blocks from the scraper queue.
 *   [goodreads_genres.py](file:///D:/LT/Novel_data/goodreads_genres.py): Cleanses, standardizes, enrich (from shelves), and populates database genres.
 *   [goodreads_search.py](file:///D:/LT/Novel_data/goodreads_search.py): Core database indexing logic, CLI query engine, multi-value AND filtering, and sort inversion.

@@ -202,6 +202,12 @@ class GoodreadsApp(customtkinter.CTk):
         self.audience_entry = customtkinter.CTkEntry(self.filters_scroll, placeholder_text="e.g. young adult, manga")
         self.audience_entry.pack(fill="x", padx=5, pady=(0, 10))
 
+        # Mood Filter
+        self.mood_label = customtkinter.CTkLabel(self.filters_scroll, text="Mood", font=customtkinter.CTkFont(size=12))
+        self.mood_label.pack(anchor="w", padx=5, pady=(5, 2))
+        self.mood_entry = customtkinter.CTkEntry(self.filters_scroll, placeholder_text="e.g. dark, adventurous")
+        self.mood_entry.pack(fill="x", padx=5, pady=(0, 10))
+
         # Author ID Filter
         self.author_label = customtkinter.CTkLabel(self.filters_scroll, text="Author ID", font=customtkinter.CTkFont(size=12))
         self.author_label.pack(anchor="w", padx=5, pady=(5, 2))
@@ -371,6 +377,7 @@ class GoodreadsApp(customtkinter.CTk):
         self.genre_entry.delete(0, "end")
         self.theme_entry.delete(0, "end")
         self.audience_entry.delete(0, "end")
+        self.mood_entry.delete(0, "end")
         self.author_entry.delete(0, "end")
         self.publisher_entry.delete(0, "end")
 
@@ -527,6 +534,10 @@ class GoodreadsApp(customtkinter.CTk):
         if not audience:
             audience = None
 
+        mood = self.mood_entry.get().strip()
+        if not mood:
+            mood = None
+
         author = self.author_entry.get().strip()
         if not author:
             author = None
@@ -567,6 +578,7 @@ class GoodreadsApp(customtkinter.CTk):
             "genre": genre,
             "theme": theme,
             "audience": audience,
+            "mood": mood,
             "author_id": author,
             "publisher_query": publisher,
             "sort_by": sort_by,
@@ -756,6 +768,25 @@ class GoodreadsApp(customtkinter.CTk):
         if audiences_str:
             details_str += f"  •  Audience: {audiences_str}"
             
+        # Add moods
+        moods_data = book.get('moods')
+        if moods_data:
+            if isinstance(moods_data, list):
+                details_str += f"\nMoods: {', '.join(moods_data)}"
+            else:
+                details_str += f"\nMoods: {moods_data}"
+                
+        # Add cover details
+        cover_details = book.get('cover_details')
+        if isinstance(cover_details, dict) and any(cover_details.values()):
+            c_col = cover_details.get('color_name') or cover_details.get('color')
+            c_w = cover_details.get('width')
+            c_h = cover_details.get('height')
+            cov_str = f"Cover: {c_w}x{c_h}"
+            if c_col:
+                cov_str += f" ({c_col})"
+            details_str += f"  •  {cov_str}"
+            
         meta3_lbl = customtkinter.CTkLabel(
             card_frame,
             text=details_str,
@@ -810,7 +841,21 @@ class GoodreadsApp(customtkinter.CTk):
                 hover_color="#374151",
                 command=lambda url=book_url: webbrowser.open(url)
             )
-            link_btn.pack(side="left")
+            link_btn.pack(side="left", padx=(0, 10))
+            
+        # Hardcover link button
+        hc_url = book.get('hardcover_url')
+        if hc_url:
+            hc_btn = customtkinter.CTkButton(
+                btn_frame, 
+                text="Open on Hardcover 📖", 
+                width=150, 
+                height=28,
+                fg_color="#1E3A8A",
+                hover_color="#172554",
+                command=lambda url=hc_url: webbrowser.open(url)
+            )
+            hc_btn.pack(side="left")
 
     def prev_page(self):
         if self.current_page > 1:
@@ -933,6 +978,21 @@ class DetailPopup(customtkinter.CTkToplevel):
         day = book.get('publication_day') or 'N/A'
         pub_date = f"{year}-{month}-{day}".replace("-N/A-N/A", "").replace("-N/A", "")
         
+        # Cover details & moods
+        cover_details = book.get('cover_details') or {}
+        c_color = cover_details.get('color_name') or cover_details.get('color') or 'N/A'
+        c_w = cover_details.get('width')
+        c_h = cover_details.get('height')
+        c_size = f"{c_w}x{c_h}" if (c_w and c_h) else 'N/A'
+        
+        moods_data = book.get('moods')
+        if isinstance(moods_data, list):
+            moods_str = ", ".join(moods_data)
+        elif moods_data:
+            moods_str = str(moods_data)
+        else:
+            moods_str = 'N/A'
+
         self.add_table_cell(details_frame, "Language", book.get('language_code') or 'N/A', 0, 0)
         self.add_table_cell(details_frame, "Publisher", pub, 0, 1)
         self.add_table_cell(details_frame, "Published Date", pub_date, 0, 2)
@@ -941,6 +1001,10 @@ class DetailPopup(customtkinter.CTkToplevel):
         self.add_table_cell(details_frame, "Is Ebook", str(book.get('is_ebook')), 1, 1)
         self.add_table_cell(details_frame, "Country", book.get('country_code') or 'N/A', 1, 2)
         self.add_table_cell(details_frame, "Edition", book.get('edition_information') or 'Standard', 1, 3)
+        self.add_table_cell(details_frame, "Cover Color", c_color, 2, 0)
+        self.add_table_cell(details_frame, "Cover Size", c_size, 2, 1)
+        self.add_table_cell(details_frame, "Moods", moods_str, 2, 2)
+        self.add_table_cell(details_frame, "Hardcover ID", str(book.get('hardcover_id') or 'N/A'), 2, 3)
 
         # 2. Description (Middle Scrollable TextBox)
         desc_title = customtkinter.CTkLabel(
@@ -959,7 +1023,7 @@ class DetailPopup(customtkinter.CTkToplevel):
 
         # 3. Bottom Panels: Popular Shelves & Similar Books
         bottom_frame = customtkinter.CTkFrame(self, fg_color="transparent")
-        bottom_frame.grid(row=4, column=0, sticky="ew", padx=20, pady=(0, 20))
+        bottom_frame.grid(row=4, column=0, sticky="ew", padx=20, pady=(0, 15))
         bottom_frame.grid_columnconfigure(0, weight=1, minsize=350)
         bottom_frame.grid_columnconfigure(1, weight=1, minsize=350)
 
@@ -1044,6 +1108,60 @@ class DetailPopup(customtkinter.CTkToplevel):
         else:
             no_sim_lbl = customtkinter.CTkLabel(sim_scroll, text="No similar book references.", font=customtkinter.CTkFont(size=11, slant="italic"))
             no_sim_lbl.pack(pady=20)
+
+        # 4. Actions Frame (Row 5)
+        actions_frame = customtkinter.CTkFrame(self, fg_color="transparent")
+        actions_frame.grid(row=5, column=0, sticky="ew", padx=20, pady=(0, 20))
+        
+        # Close button (right aligned)
+        close_btn = customtkinter.CTkButton(
+            actions_frame, 
+            text="Close", 
+            width=100, 
+            fg_color="#D9534F", 
+            hover_color="#C9302C", 
+            command=self.destroy
+        )
+        close_btn.pack(side="right", padx=(10, 0))
+        
+        # Goodreads button
+        book_url = book.get('link') or book.get('url')
+        if book_url:
+            gr_btn = customtkinter.CTkButton(
+                actions_frame,
+                text="Open on Goodreads 🌐",
+                width=160,
+                fg_color="#4B5563",
+                hover_color="#374151",
+                command=lambda url=book_url: webbrowser.open(url)
+            )
+            gr_btn.pack(side="left", padx=(0, 10))
+            
+        # Hardcover button
+        hc_url = book.get('hardcover_url')
+        if hc_url:
+            hc_btn = customtkinter.CTkButton(
+                actions_frame,
+                text="Open on Hardcover 📖",
+                width=160,
+                fg_color="#1E3A8A",
+                hover_color="#172554",
+                command=lambda url=hc_url: webbrowser.open(url)
+            )
+            hc_btn.pack(side="left", padx=(0, 10))
+            
+        # Cover image button
+        c_url = cover_details.get('url')
+        if c_url:
+            cov_btn = customtkinter.CTkButton(
+                actions_frame,
+                text="View Cover Image 🖼️",
+                width=160,
+                fg_color="#059669",
+                hover_color="#047857",
+                command=lambda url=c_url: webbrowser.open(url)
+            )
+            cov_btn.pack(side="left", padx=(0, 10))
 
     def add_table_cell(self, parent, label_text, value_text, row, col):
         cell_frame = customtkinter.CTkFrame(parent, fg_color="transparent")

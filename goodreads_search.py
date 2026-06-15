@@ -617,6 +617,7 @@ def search_database(db_path, data_path, title_query=None, isbn_query=None, book_
                     publication_year=None, publication_year_min=None, publication_year_max=None,
                     language_code=None, is_ebook=None, publisher_query=None,
                     author_id=None, shelf=None, genre=None, theme=None, audience=None,
+                    mood=None,
                     sort_by='popularity', sort_dir='desc', limit=10, offset=0):
     """
     Searches using the SQLite database.
@@ -712,6 +713,13 @@ def search_database(db_path, data_path, title_query=None, isbn_query=None, book_
         for au in audiences_query:
             query_parts.append("json_extract(genres, '$.audiences') LIKE ?")
             params.append(f'%"{au}"%')
+            
+    if mood:
+        # Support comma-separated multiple moods (AND match)
+        moods_query = [m.strip().lower() for m in mood.split(',') if m.strip()]
+        for md in moods_query:
+            query_parts.append("moods LIKE ?")
+            params.append(f"%{md}%")
         
     sql = "SELECT offset, length, raw_json, genres FROM books"
     if query_parts:
@@ -739,8 +747,8 @@ def search_database(db_path, data_path, title_query=None, isbn_query=None, book_
     books = []
     f = None
     try:
-        # Check if we need to open the raw data file (only needed if some offsets are populated)
-        needs_file = any(r[0] is not None for r in results)
+        # Check if we need to open the raw data file (only needed if some offsets are populated and raw_json is missing)
+        needs_file = any(r[0] is not None and r[2] is None for r in results)
         if needs_file:
             if not os.path.exists(data_path):
                 raise FileNotFoundError(f"Original data file not found at {data_path} (needed to read complete records).")
@@ -748,12 +756,12 @@ def search_database(db_path, data_path, title_query=None, isbn_query=None, book_
             
         for off, length, raw_json, genres_val in results:
             book = None
-            if off is not None and length is not None:
+            if raw_json is not None:
+                book = json.loads(raw_json)
+            elif off is not None and length is not None:
                 f.seek(off)
                 line_bytes = f.read(length)
                 book = normalize_book(json.loads(line_bytes.decode('utf-8')))
-            elif raw_json is not None:
-                book = json.loads(raw_json)
                 
             if book is not None:
                 if genres_val:
@@ -864,6 +872,7 @@ def search_streaming(data_path, title_query=None, isbn_query=None, book_id_query
                      publication_year=None, publication_year_min=None, publication_year_max=None,
                      language_code=None, is_ebook=None, publisher_query=None,
                      author_id=None, shelf=None, genre=None, theme=None, audience=None,
+                     mood=None,
                      sort_by=None, sort_dir='desc', limit=10, offset=0):
     """
     Streaming search fallback that scans the file line-by-line.
@@ -876,6 +885,18 @@ def search_streaming(data_path, title_query=None, isbn_query=None, book_id_query
     for item, _, _ in read_books_generator(data_path):
         if book_id_query and str(item.get('book_id')) != str(book_id_query):
             continue
+            
+        if mood:
+            moods_query = [m.strip().lower() for m in mood.split(',') if m.strip()]
+            book_moods = item.get('moods') or []
+            if isinstance(book_moods, str):
+                book_moods = [m.strip().lower() for m in book_moods.split(',') if m.strip()]
+            elif isinstance(book_moods, list):
+                book_moods = [str(m).strip().lower() for m in book_moods]
+            else:
+                book_moods = []
+            if not all(mq in book_moods for mq in moods_query):
+                continue
             
         if isbn_query:
             isbns = [item.get('isbn'), item.get('isbn13'), item.get('asin')]
@@ -1080,8 +1101,40 @@ def pretty_print_books(books):
             print(f"    Themes  : {themes_str}")
         if audiences_str != "N/A":
             print(f"    Audience: {audiences_str}")
+            
+        # Display Moods
+        moods_data = book.get('moods')
+        if moods_data:
+            if isinstance(moods_data, list):
+                moods_print_str = ", ".join(moods_data)
+            else:
+                moods_print_str = str(moods_data)
+            print(f"    Moods   : {moods_print_str}")
+            
+        # Display Cover Details
+        cover_details = book.get('cover_details')
+        if isinstance(cover_details, dict) and any(cover_details.values()):
+            c_url = cover_details.get('url') or 'N/A'
+            c_color = cover_details.get('color')
+            c_col_name = cover_details.get('color_name')
+            c_w = cover_details.get('width')
+            c_h = cover_details.get('height')
+            
+            color_parts = []
+            if c_color:
+                color_parts.append(c_color)
+            if c_col_name:
+                color_parts.append(c_col_name)
+            color_str = f" ({', '.join(color_parts)})" if color_parts else ""
+            
+            dim_str = f" | Size: {c_w}x{c_h}" if (c_w and c_h) else ""
+            print(f"    Cover   : {c_url}{color_str}{dim_str}")
+            
+        # Display Links
         if book.get('link') or book.get('url'):
             print(f"    Link    : {book.get('link') or book.get('url')}")
+        if book.get('hardcover_url'):
+            print(f"    Hardcover Link: {book.get('hardcover_url')}")
             
         desc = book.get('description') or ""
         if desc:
@@ -1125,6 +1178,7 @@ def main():
     parser.add_argument("--genre", help="Comma-separated genres (all must match).")
     parser.add_argument("--theme", help="Comma-separated themes (all must match).")
     parser.add_argument("--audience", help="Comma-separated target audiences (all must match).")
+    parser.add_argument("--mood", help="Comma-separated moods (all must match).")
     
     # Sorting and Pagination
     parser.add_argument("--sort", choices=['rating', 'reviews', 'year', 'popularity'], default='popularity',
@@ -1144,7 +1198,8 @@ def main():
     if not any([args.build_index, args.status, args.search, args.id, args.isbn,
                 args.rating_min, args.rating_max, args.reviews_min, args.year,
                 args.year_min, args.year_max, args.lang, args.ebook is not None,
-                args.publisher, args.author, args.shelf, args.genre, args.theme, args.audience]):
+                args.publisher, args.author, args.shelf, args.genre, args.theme, args.audience,
+                args.mood]):
         parser.print_help()
         print("\nIndex Status:")
         exists, msg = check_index_status(args.db_path)
@@ -1195,6 +1250,7 @@ def main():
                 genre=args.genre,
                 theme=args.theme,
                 audience=args.audience,
+                mood=args.mood,
                 sort_by=args.sort,
                 sort_dir=args.sort_dir,
                 limit=args.limit,
@@ -1220,6 +1276,7 @@ def main():
                 genre=args.genre,
                 theme=args.theme,
                 audience=args.audience,
+                mood=args.mood,
                 sort_by=args.sort if (args.sort or any([args.rating_min, args.rating_max])) else None,
                 sort_dir=args.sort_dir,
                 limit=args.limit,

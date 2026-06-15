@@ -228,6 +228,37 @@ def parse_book(book):
     # Lọc tags thô (loại bỏ từ thuộc blacklist)
     cleaned_tags = [t for t in tags if not any(bl in t.lower() for bl in BLACKLIST_KEYWORDS)]
     
+    # Trích xuất ISBNs từ editions
+    isbn_10 = ""
+    isbn_13 = ""
+    editions = book.get('editions') or []
+    for ed in editions:
+        if isinstance(ed, dict):
+            i10 = ed.get('isbn_10')
+            i13 = ed.get('isbn_13')
+            if i10 and not isbn_10:
+                isbn_10 = i10
+            if i13 and not isbn_13:
+                isbn_13 = i13
+            if isbn_10 and isbn_13:
+                break
+                
+    # Trích xuất dữ liệu bìa sách từ cached_image
+    cached_image = book.get('cached_image') or {}
+    cover_id = ""
+    cover_url = ""
+    cover_color = ""
+    cover_width = ""
+    cover_height = ""
+    cover_color_name = ""
+    if isinstance(cached_image, dict):
+        cover_id = cached_image.get('id') or ""
+        cover_url = cached_image.get('url') or ""
+        cover_color = cached_image.get('color') or ""
+        cover_width = cached_image.get('width') or ""
+        cover_height = cached_image.get('height') or ""
+        cover_color_name = cached_image.get('color_name') or ""
+        
     slug = book.get('slug')
     book_url = f"https://hardcover.app/books/{slug}" if slug else ""
     
@@ -256,6 +287,14 @@ def parse_book(book):
         'prompts_count': book.get('prompts_count') or 0,
         'users_count': book.get('users_count') or 0,
         'users_read_count': book.get('users_read_count') or 0,
+        'isbn_10': isbn_10,
+        'isbn_13': isbn_13,
+        'cover_id': cover_id,
+        'cover_url': cover_url,
+        'cover_color': cover_color,
+        'cover_width': cover_width,
+        'cover_height': cover_height,
+        'cover_color_name': cover_color_name,
         'url': book_url,
         'description': book.get('description') or ""
     }
@@ -307,7 +346,9 @@ def append_books_to_csv(csv_file, parsed_books):
         "content_warnings", "rating", "ratings_count", "reviews_count", "pages", 
         "release_year", "release_date", "activities_count", "book_category_id",
         "compilation", "editions_count", "journals_count", "lists_count",
-        "prompts_count", "users_count", "users_read_count", "url", "description"
+        "prompts_count", "users_count", "users_read_count", "isbn_10", "isbn_13", 
+        "cover_id", "cover_url", "cover_color", "cover_width", "cover_height", 
+        "cover_color_name", "url", "description"
     ]
     with open(csv_file, 'a', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
@@ -339,6 +380,14 @@ def append_books_to_csv(csv_file, parsed_books):
                 book['prompts_count'],
                 book['users_count'],
                 book['users_read_count'],
+                book['isbn_10'],
+                book['isbn_13'],
+                book['cover_id'],
+                book['cover_url'],
+                book['cover_color'],
+                book['cover_width'],
+                book['cover_height'],
+                book['cover_color_name'],
                 book['url'],
                 book['description']
             ])
@@ -503,12 +552,32 @@ def run_crawl(args):
     logger.info(f"  - File JSON: '{args.output_json}'")
     logger.info(f"  - File CSV: '{args.output_csv}'")
     
-    # Tạo mới file đầu ra nếu cào lại từ đầu
+    # Tạo mới file đầu ra nếu cào lại từ đầu (sao lưu file cũ nếu có để tránh mất dữ liệu)
     if start_offset == 0:
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         if os.path.exists(args.output_json):
-            os.remove(args.output_json)
+            backup_json = f"{os.path.splitext(args.output_json)[0]}_bak_{timestamp}.json"
+            try:
+                os.rename(args.output_json, backup_json)
+                logger.info(f"Đã sao lưu file JSON cũ thành '{backup_json}'")
+            except Exception as e:
+                logger.error(f"Không thể sao lưu file JSON cũ: {e}")
+                try:
+                    os.remove(args.output_json)
+                except Exception:
+                    pass
         if os.path.exists(args.output_csv):
-            os.remove(args.output_csv)
+            backup_csv = f"{os.path.splitext(args.output_csv)[0]}_bak_{timestamp}.csv"
+            try:
+                os.rename(args.output_csv, backup_csv)
+                logger.info(f"Đã sao lưu file CSV cũ thành '{backup_csv}'")
+            except Exception as e:
+                logger.error(f"Không thể sao lưu file CSV cũ: {e}")
+                try:
+                    os.remove(args.output_csv)
+                except Exception:
+                    pass
             
     query = """
     query GetBooks($limit: Int!, $offset: Int!) {
@@ -535,6 +604,11 @@ def run_crawl(args):
         users_read_count
         cached_contributors
         cached_tags
+        cached_image
+        editions {
+          isbn_10
+          isbn_13
+        }
       }
     }
     """
