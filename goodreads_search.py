@@ -593,6 +593,25 @@ def check_index_status(db_path):
     except Exception as e:
         return False, f"Database index exists but is corrupted or invalid: {e}"
 
+def normalize_db_like_query(q):
+    if not q:
+        return q
+    # Replace all single and double quote variations with '%' to match any quote character in the DB
+    for char in ["'", "’", "‘", "`", '"', "“", "”"]:
+        q = q.replace(char, "%")
+    return q
+
+def normalize_text_for_match(text):
+    if not text:
+        return ""
+    # Normalize single quotes to straight single quotes
+    for char in ["’", "‘", "`"]:
+        text = text.replace(char, "'")
+    # Normalize double quotes to straight double quotes
+    for char in ["“", "”"]:
+        text = text.replace(char, '"')
+    return text.lower()
+
 def search_database(db_path, data_path, title_query=None, isbn_query=None, book_id_query=None,
                     rating_min=None, rating_max=None, reviews_min=None,
                     publication_year=None, publication_year_min=None, publication_year_max=None,
@@ -613,8 +632,9 @@ def search_database(db_path, data_path, title_query=None, isbn_query=None, book_
     params = []
     
     if title_query:
+        norm_q = normalize_db_like_query(title_query)
         query_parts.append("(title LIKE ? OR description LIKE ?)")
-        params.extend([f"%{title_query}%", f"%{title_query}%"])
+        params.extend([f"%{norm_q}%", f"%{norm_q}%"])
         
     if isbn_query:
         query_parts.append("(isbn = ? OR isbn13 = ? OR asin = ?)")
@@ -657,8 +677,9 @@ def search_database(db_path, data_path, title_query=None, isbn_query=None, book_
         params.append(1 if is_ebook else 0)
         
     if publisher_query:
+        norm_pub = normalize_db_like_query(publisher_query)
         query_parts.append("publisher LIKE ?")
-        params.append(f"%{publisher_query}%")
+        params.append(f"%{norm_pub}%")
         
     if author_id:
         query_parts.append("author_ids LIKE ?")
@@ -862,9 +883,10 @@ def search_streaming(data_path, title_query=None, isbn_query=None, book_id_query
                 continue
                 
         if title_query:
-            t = (item.get('title') or item.get('title_without_series') or "").lower()
-            desc = (item.get('description') or "").lower()
-            if title_query.lower() not in t and title_query.lower() not in desc:
+            norm_query = normalize_text_for_match(title_query)
+            t = normalize_text_for_match(item.get('title') or item.get('title_without_series') or "")
+            desc = normalize_text_for_match(item.get('description') or "")
+            if norm_query not in t and norm_query not in desc:
                 continue
                 
         if rating_min is not None:
@@ -920,8 +942,9 @@ def search_streaming(data_path, title_query=None, isbn_query=None, book_id_query
                 continue
                 
         if publisher_query:
-            pub = (item.get('publisher') or "").lower()
-            if publisher_query.lower() not in pub:
+            norm_pub_query = normalize_text_for_match(publisher_query)
+            pub = normalize_text_for_match(item.get('publisher') or "")
+            if norm_pub_query not in pub:
                 continue
                 
         if author_id:
