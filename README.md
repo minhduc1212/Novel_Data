@@ -1,197 +1,278 @@
-# Goodreads Novel Scraper, SQLite Search Engine & Genre Analytics Pipeline
+# Goodreads & Hardcover Novel Data Scraper, SQLite Search Engine & Genre Analytics Pipeline
 
-An advanced, end-to-end Python pipeline designed to scrape, clean, enrich, index, and browse massive book datasets. The system extracts novel metadata from raw Open Library dumps, scrapes Goodreads using a multi-threaded headless browser framework capable of bypassing WAF/Cloudflare blocks, refines execution checkpoints, builds a high-performance SQLite database, cleanses and enrich book genres by cross-referencing user tags, and provides both a CLI search engine and a modern dark-theme GUI browser built with `customtkinter`.
+An advanced, end-to-end Python pipeline designed to filter, crawl, clean, enrich, index, merge, and browse massive book datasets. The system extracts novel metadata from raw 59GB Open Library dumps, crawls Goodreads using a multi-threaded headless browser framework capable of bypassing Web Application Firewalls (WAF) and Cloudflare blocks, refines checkpoints from logs, crawls cover designs and reader moods from the Hardcover GraphQL API, backfills and classifies genres, and indexes everything into a high-performance SQLite database. Finally, it exposes a multi-dimensional CLI search engine and a modern dark-theme GUI browser built with `customtkinter`.
 
 ---
 
-## 📌 System Architecture
+## 📌 System Architecture & Data Flow
 
-The pipeline consists of six key steps, moving from raw public data dumps to an interactive search GUI and incorporating an offline genre enrichment dataset.
+The pipeline operates in three distinct phases: Ingestion & Extraction, Enrichment & Merging, and Querying & Visualization.
 
 ```mermaid
 graph TD
-    A[Open Library 59GB Dump] -->|ol_data.py| B(clean_novel_isbns.txt)
-    B -->|goodreads_data.py| C{Goodreads Scraper}
-    C -->|DrissionPage & proxies| D[(goodreads_books.json / csv)]
-    C -.->|WAF block log| E(goodreads_scraper.log)
-    E -->|clean_checkpoint.py| F(goodreads_checkpoint.json)
-    F -.->|Restore clean ISBNs| C
-    
-    D -->|goodreads_search.py| G[(goodreads_books.db)]
-    
-    H[(goodreads_book_genres_initial.json)] -->|goodreads_genres.py| G
-    G -->|goodreads_search.py| I[CLI Search Engine]
-    G -->|goodreads_ui.py| J[CustomTkinter Desktop GUI]
+    %% Phase 1: Ingestion & Goodreads Scraping
+    subgraph Phase 1: Ingestion & Scraping
+        OL[Open Library 59GB Dump] -->|ol_data.py| OL_Clean(clean_novel_isbns.txt)
+        OL_Clean -->|goodreads_data.py| GR_Scraper{Goodreads Scraper}
+        GR_Scraper -->|DrissionPage & local proxy relay| GR_Raw[(goodreads_books.json / csv)]
+        GR_Scraper -.->|WAF block logs| LOG(goodreads_scraper.log)
+        LOG -->|clean_checkpoint.py| CKPT(goodreads_checkpoint.json)
+        CKPT -.->|Restore/Retry Failed ISBNs| GR_Scraper
+    end
+
+    %% Phase 2: Indexing & Enrichment
+    subgraph Phase 2: Indexing & Enrichment
+        GR_Raw -->|goodreads_search.py --build-index| DB[(goodreads_books.db)]
+        GEN_INIT[goodreads_book_genres_initial.json] -->|goodreads_genres.py| DB
+        
+        %% Hardcover Crawling & Integration
+        HC_API{Hardcover GraphQL API} -->|hardcover_api.py| HC_Raw(hardcover_books.csv / json)
+        HC_Raw -->|merge_goodreads_hardcover.py| DB
+    end
+
+    %% Phase 3: Access & Search
+    subgraph Phase 3: Access & Search
+        DB -->|goodreads_search.py --search| CLI[CLI Search Engine]
+        DB -->|goodreads_ui.py| GUI[CustomTkinter Desktop GUI]
+    end
+
+    style GR_Scraper fill:#f9f,stroke:#333,stroke-width:2px
+    style HC_API fill:#9cf,stroke:#333,stroke-width:2px
+    style DB fill:#ff9,stroke:#333,stroke-width:2px
 ```
 
 ---
 
-## 🛠️ Components & Features
+## 📂 Codebase Details & File Directory
+
+| File | Description | Target Inputs / Outputs |
+| :--- | :--- | :--- |
+| **[ol_data.py](file:///D:/LT/Novel_data/ol_data.py)** | Stream-reads massive Open Library JSON dumps to isolate novel-specific ISBNs using subjects matching and blacklist keywords. | Input: `F:/Data/ol_data.txt`<br>Output: `clean_novel_isbns.txt` |
+| **[goodreads_data.py](file:///D:/LT/Novel_data/goodreads_data.py)** | Multi-threaded Chromium web-crawler utilizing DrissionPage and TCP credential-injection proxy tunnels to bypass WAFs and retrieve Goodreads pages. | Input: `clean_novel_isbns.txt`<br>Output: `goodreads_books.json`, `goodreads_books.csv`, `goodreads_checkpoint.json` |
+| **[goodreads_1data.py](file:///D:/LT/Novel_data/goodreads_1data.py)** | Lightweight scraper using standard Python `requests` and `BeautifulSoup` to scrape and parse a single Goodreads page (extracts JSON `__NEXT_DATA__` page states). | Input: URL (e.g. Mistborn page)<br>Output: Console metadata prints |
+| **[clean_checkpoint.py](file:///D:/LT/Novel_data/clean_checkpoint.py)** | Scans logs to identify temporary `403 Forbidden` WAF challenges and deletes these ISBNs from the checkpoint skip-list to allow retry sweeps. | Input: `goodreads_scraper.log`<br>Output: Updates `goodreads_checkpoint.json` |
+| **[goodreads_genres.py](file:///D:/LT/Novel_data/goodreads_genres.py)** | Standardizes, cleanses, and maps raw user-defined shelf tags into three database dimensions: genres, themes/tropes, and target audiences/formats. | Input: `goodreads_book_genres_initial.json`<br>Output: Updates `genres` column in `goodreads_books.db` |
+| **[goodreads_search.py](file:///D:/LT/Novel_data/goodreads_search.py)** | Compiles the SQLite database from scraped JSON, sets up indexes, and runs CLI search queries via native `json_extract()` SQL matches. | Input: `goodreads_books.json` or `goodreads_books.db`<br>Output: CLI result prints or CSV/JSON queries |
+| **[goodreads_ui.py](file:///D:/LT/Novel_data/goodreads_ui.py)** | Interactive CustomTkinter desktop GUI browser featuring complex sidebar filters, ratings sorting, paginated results, and detail popup cards. | Input: `goodreads_books.db`<br>Output: Desktop UI interface |
+| **[hardcover_api.py](file:///D:/LT/Novel_data/hardcover_api.py)** | High-throughput multi-threaded client querying Hardcover's GraphQL API for cover colors, image paths, page dimensions, reader moods, and metadata. | Input: Hardcover GraphQL API endpoint<br>Output: `hardcover_books.json`, `hardcover_books.csv`, `hardcover_checkpoint.json` |
+| **[merge_goodreads_hardcover.py](file:///D:/LT/Novel_data/merge_goodreads_hardcover.py)** | Performs batch updates to enrich existing SQLite records with Hardcover cover metrics, reader moods, and adds any unmatched books. | Input: `hardcover_books.csv`<br>Output: Updates `goodreads_books.db` |
+| **[todo.md](file:///D:/LT/Novel_data/todo.md)** | Task list tracking research paths, data sources (Wikidata, isfdb, RanobeDB, etc.), and planned workflows. | Task tracking |
+
+---
+
+## 🛠️ Detailed Component Analysis
 
 ### 1. Ingestion & ISBN Filtering ([ol_data.py](file:///D:/LT/Novel_data/ol_data.py))
-* **Goal**: Processes raw Open Library dumps (often 50GB+) to filter for novels and extract unique ISBNs.
-* **Keyword Filter**: Detects subjects like fiction, novel, romance, fantasy, mystery, thriller, horror, young adult, etc.
-* **Negative Exclusions**: Strips non-novel formats like textbook, manual, guide, dictionary, encyclopedia, biography, manga, comics, academic, and poetry.
-* **Performance**: Stream-reads the dump line-by-line using binary buffer seek, matching key text before JSON deserialization (`json.loads`) to minimize memory load and CPU time.
+* **Keywords Checked**: `fiction`, `novel`, `romance`, `fantasy`, `mystery`, `thriller`, `horror`, `science fiction`, `historical fiction`, `young adult`, `literary fiction`.
+* **Exclusion List**: Discards non-novel formats like `non-fiction`, `biography`, `textbook`, `manual`, `guide`, `dictionary`, `encyclopedia`, `comic`, `manga`, `poetry`, `academic`.
+* **Performance Optimization**: Scans files using a fast generator line split loop before calling the heavy `json.loads()` parser. This allows it to scan a 59GB dump in under an hour on a standard SSD.
 
 ### 2. Resilient Goodreads Scraper ([goodreads_data.py](file:///D:/LT/Novel_data/goodreads_data.py))
-* **WAF/Cloudflare Bypassing**: Uses [DrissionPage](https://github.com/g1879/DrissionPage) to control Chromium directly. Unlike standard `requests` or Selenium/Puppeteer, it is highly resistant to bot-detection mechanisms and processes Cloudflare/AWS challenges naturally.
-* **Multi-Threaded**: Spawns multiple Chromium instances crawling concurrently with staggered startups.
-* **Local Proxy Relay**: Features a lightweight local TCP tunnel server per thread that dynamically injects basic authentication credentials into HTTP/SOCKS5 proxy requests.
-* **RAM & Disk Optimizations**: 
-  - Disables media (images, audio, video) loading.
-  - Limits Chromium to one renderer process.
-  - Caps V8 javascript heap at 256MB.
-  - Employs sandbox-disabled configurations and uses a per-thread temp folder for profiles to prevent disk write thrashing.
-* **Data Extraction**: Resolves Next.js page states via `__NEXT_DATA__` for complete accuracy, capturing title, description, average points, counts (ratings, reviews, currently reading, want to read), full genres, and the top 10 reviews (with date, author details, like counts, and spoiler status). Falls back to DOM selectors on script fail.
-* **Atomic Append Persistence**: Performs O(1) tail-append operations to add JSON objects directly inside the closing array tag (`]`), avoiding complete rewrites.
-* **Checkpoints**: Persists active state (`failed_isbns`, `duplicate_isbns`, and `non_english_isbns`) in `goodreads_checkpoint.json` for crash safety and deduplication.
+* **Bot-Bypass Engine**: Powered by [DrissionPage](https://github.com/g1879/DrissionPage) to control Chromium directly. It behaves identically to human browsers, letting Cloudflare and AWS challenge-defense pages resolve transparently.
+* **Per-Thread Proxy relays**: Bypasses the browser's lack of support for authentication-protected proxies by running a lightweight local TCP tunnel server on each worker thread. The TCP server intercepts browser requests, appends proxy authentication headers, and relays traffic.
+* **Data Parsing Strategy**: Extracts variables directly from the script tag containing `__NEXT_DATA__`. This caches apollo-state fields, bypassing pagination to scrape all book genres, reviews, and reading statistics instantly. It falls back to BeautifulSoup DOM parsing if javascript blocks fail to load.
 
-### 3. Checkpoint Recovery & Refiner ([clean_checkpoint.py](file:///D:/LT/Novel_data/clean_checkpoint.py))
-* **Goal**: Automatically scans the execution logs (`goodreads_scraper.log`).
-* **Logic**: Extracts ISBNs that failed solely because of temporary `403 Forbidden` WAF challenges and cleanses them from `failed_isbns` in `goodreads_checkpoint.json`. This permits them to be retried on subsequent scraping passes instead of being permanently skipped.
+### 3. Checkpoint Refiner ([clean_checkpoint.py](file:///D:/LT/Novel_data/clean_checkpoint.py))
+* **WAF Self-Healing**: Network issues or proxy failures can cause requests to yield a `403 Forbidden` block. `goodreads_data.py` flags these as failures, but `clean_checkpoint.py` parses logs to find these temporary failures and removes them from the failed queue so they are retried in subsequent rounds.
 
-### 4. Structured Classification & Enrichment ([goodreads_genres.py](file:///D:/LT/Novel_data/goodreads_genres.py))
-* **Goal**: Cleanses, standardizes, and classifies book genres into distinct dimensions: **Genres**, **Themes & Tropes**, and **Target Audiences / Formats** stored in the database.
-* **Ingestion**: Processes `goodreads_book_genres_initial.json` (190MB JSON Lines file) and database records.
-* **Multi-Dimensional Classification**:
-  - **Blacklist Filter**: Discards formatting/status noise tags (like `ebook`, `audiobook`, `calibre`, `read-in-2016`, `tbr`, `standalone`) by checking shelves against a comprehensive `BLACKLIST_KEYWORDS` array.
-  - **Shelf Mapping & Classification**: Decides whether a tag is a core genre, a theme/trope, or a target audience/format based on the `SHELF_CLASSIFICATION` mapping.
-  - **Structured Storage**: Encodes classifications as a structured JSON object in the SQLite `genres` column: `{"genres": [...], "themes": [...], "audiences": [...]}`.
-* **Database Updates**: Efficiently backfills the database in batches, classifying and updating **2,006,966 book records**.
+### 4. Classification & Enrichment ([goodreads_genres.py](file:///D:/LT/Novel_data/goodreads_genres.py))
+* **Tag Cleansing**: Filters out user status tags (e.g. `read-in-2018`, `favorites`, `abandoned`, `kindle`, `paperback`) using `BLACKLIST_KEYWORDS`.
+* **Standardized Shelf Categories**: Map shelf keywords into standard categories:
+  * **Genres**: `fantasy`, `science fiction`, `mystery`, `thriller`, `romance`, `horror`, `biography`, etc.
+  * **Themes & Tropes**: `magic`, `wizards`, `dragons`, `paranormal`, `dystopian`, `steampunk`, `cyberpunk`, `time travel`, `grimdark`.
+  * **Target Audiences & Formats**: `young adult`, `middle grade`, `children`, `new adult`, `adult`, `graphic novel`, `manga`, `comics`.
+* **Structured Output**: Saves classifications to the SQLite `genres` column as a structured JSON object:
+  ```json
+  {"genres": ["fantasy", "epic fantasy"], "themes": ["magic", "dragons"], "audiences": ["adult"]}
+  ```
 
-### 5. High-Performance SQLite Search Engine ([goodreads_search.py](file:///D:/LT/Novel_data/goodreads_search.py))
-* **Indexing**: Rebuilds the SQLite database index from the raw JSON file while compiling structured classifications.
-* **Multi-Dimensional AND Filtering**: 
-  - Translates queries using SQLite's native `json_extract()` functions (e.g. `json_extract(genres, '$.themes') LIKE '%"magic"%'`) for high-performance `AND`-matching.
-  - Supports `--genre`, `--theme`, and `--audience` CLI arguments, each allowing multiple comma-separated values matching all terms (AND logic).
-  - **Sort Inversion**: Supports choosing sorting directions via `--sort-dir asc` (worst-to-best / inverse rating) or `--sort-dir desc` (best-to-worst / default).
-  - **Streaming Fallback**: Parses and builds structured classifications on the fly if running in streaming mode (without SQLite index).
+### 5. GraphQL Hardcover Scraper ([hardcover_api.py](file:///D:/LT/Novel_data/hardcover_api.py))
+* **GraphQL Crawl**: Accesses `https://api.hardcover.app/v1/graphql` to retrieve rich book covers and reader moods.
+* **Multi-threaded Worker**: Employs a `ThreadPoolExecutor` where threads retrieve blocks of offset ranges (configured via `--batch-size`) and append results to output files safely using a file write lock.
+* **Command Arguments**:
+  * `-t`, `--threads` (default: `4`): Number of parallel network crawlers.
+  * `-l`, `--limit` (default: `0`): Cap on total books fetched (`0` fetches everything).
+  * `-b`, `--batch-size` (default: `1000`): Books retrieved per GraphQL call.
+  * `-o`, `--offset` (default: `0`): Starting offset index.
+  * `-d`, `--delay` (default: `0.1`): Throttling delay between thread requests.
 
-### 6. CustomTkinter Desktop GUI ([goodreads_ui.py](file:///D:/LT/Novel_data/goodreads_ui.py))
-* **User Interface**: Built on [customtkinter](https://github.com/TomSchimansky/CustomTkinter) featuring a modern dark theme layout.
-* **Features**:
-  - **Interactive Results**: Displays paginated book cards showing description excerpts, rating stars, and details.
-  - **Filters Sidebar**: Replaces the single generic genre input with three distinct sidebar search entry fields: **Genre**, **Theme & Trope**, and **Audience / Format** supporting comma-separated `AND` queries.
-  - **Detailed Card View**: Renders the cleaned Genres, Themes, and Audiences separately on result cards.
-  - **Book Details**: Displays detailed book info in a popup modal, grouping classifications under distinct *Genres*, *Themes & Tropes*, and *Target Audience / Format* sections.
+### 6. SQLite Database Merger ([merge_goodreads_hardcover.py](file:///D:/LT/Novel_data/merge_goodreads_hardcover.py))
+* **Schema Alterations**: Dynamically appends Hardcover attributes to the standard `books` table structure (see the Database Schema below).
+* **O(1) Memory Lookup**: Preloads the database's ISBN mapping into memory hashtables to resolve record matches in constant time.
+* **Enrichment Logic**: If a book matches an existing Goodreads record via ISBN/ISBN13, it appends the cover links, main colors, and reader moods. If no matching record is found, it inserts a new record (prefixed with `hc_` as `book_id`).
 
 ---
 
-## 🚀 Installation & Setup
+## 🗄️ Database Schema (`books` table)
 
-1. **Clone & Open Project Directory**:
-   ```bash
-   cd D:\LT\Novel_data
-   ```
+The `goodreads_books.db` file stores all processed records in the `books` table:
 
-2. **Create and Activate virtual environment**:
-   ```bash
-   python -m venv .venv
-   # For Windows PowerShell:
-   .venv\Scripts\Activate.ps1
-   # For Linux/macOS:
-   source .venv/bin/activate
-   ```
-
-3. **Install Dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-   *Note: Ensure you have `customtkinter` installed as well:*
-   ```bash
-   pip install customtkinter DrissionPage beautifulsoup4 lxml requests tqdm
-   ```
-
-4. **Setup Proxy Environment File**:
-   Create or modify [.env](file:///D:/LT/Novel_data/.env) in the project root folder. Add your proxy lists (supporting basic auth) under `PROXIES`:
-   ```ini
-   # Add SOCKS5 or HTTP proxies separated by commas
-   PROXIES=http://user:password@proxy1_ip:port,socks5://user:pwd@proxy2_ip:port
-   ```
+| Column | SQLite Type | Source | Description |
+| :--- | :--- | :--- | :--- |
+| **`book_id`** | TEXT (PK) | Goodreads / Hardcover | The unique book ID (Hardcover IDs are prefixed with `hc_`). |
+| **`title`** | TEXT | Goodreads / Hardcover | Title of the novel. |
+| **`description`** | TEXT | Goodreads / Hardcover | Cleaned description or synopsis of the book. |
+| **`isbn`** | TEXT | Goodreads / Hardcover | 10-digit International Standard Book Number. |
+| **`isbn13`** | TEXT | Goodreads / Hardcover | 13-digit International Standard Book Number. |
+| **`asin`** | TEXT | Goodreads | Amazon Standard Identification Number. |
+| **`average_rating`** | REAL | Goodreads / Hardcover | Average user rating out of 5.0. |
+| **`ratings_count`** | INTEGER | Goodreads / Hardcover | Total number of user ratings. |
+| **`text_reviews_count`**| INTEGER | Goodreads / Hardcover | Total number of text reviews written. |
+| **`publication_year`** | INTEGER | Goodreads / Hardcover | Year the book was published. |
+| **`publisher`** | TEXT | Goodreads | Name of the publisher. |
+| **`language_code`** | TEXT | Goodreads | Language code of the book (e.g. `eng`, `spa`). |
+| **`is_ebook`** | INTEGER | Goodreads | Binary flag (0 or 1) indicating if the book is an ebook. |
+| **`author_ids`** | TEXT | Goodreads | Comma-separated list of Goodreads Author IDs. |
+| **`popular_shelves`** | TEXT | Goodreads | Comma-separated list of raw shelf tags. |
+| **`genres`** | TEXT (JSON) | Goodreads / Hardcover | Structured JSON: `{"genres": [...], "themes": [...], "audiences": [...]}`. |
+| **`offset`** | INTEGER | Indexer | Record byte offset within `goodreads_books.json`. |
+| **`length`** | INTEGER | Indexer | Record byte length within `goodreads_books.json`. |
+| **`raw_json`** | TEXT (JSON) | Goodreads / Hardcover | Raw, unmodified JSON payload. |
+| **`moods`** | TEXT | Hardcover | Comma-separated list of reader moods (e.g. `emotional, dark`). |
+| **`cover_id`** | INTEGER | Hardcover | The unique cover image ID from Hardcover. |
+| **`cover_url`** | TEXT | Hardcover | Direct web URL to the book cover image. |
+| **`cover_color`** | TEXT | Hardcover | Hex color code of the dominant cover color (e.g. `#5a4d41`). |
+| **`cover_width`** | INTEGER | Hardcover | Width of the cover image in pixels. |
+| **`cover_height`** | INTEGER | Hardcover | Height of the cover image in pixels. |
+| **`cover_color_name`** | TEXT | Hardcover | Text representation of the cover's dominant color. |
+| **`hardcover_id`** | INTEGER | Hardcover | Unique identification number from Hardcover. |
+| **`hardcover_slug`** | TEXT | Hardcover | Slug identifier from Hardcover. |
+| **`hardcover_url`** | TEXT | Hardcover | Full hyperlink to the book on hardcover.app. |
 
 ---
 
-## 📖 How to Run
+## 🚀 Installation & Environment Setup
 
-### Step 1: Filter Novel ISBNs from Open Library
-Specify your raw Open Library dump location in [ol_data.py](file:///D:/LT/Novel_data/ol_data.py) and execute:
+### 1. Initialize the Virtual Environment
+Navigate to the project directory and create a virtual environment:
+```powershell
+# Navigate to the working directory
+cd D:\LT\Novel_data
+
+# Create the python virtual environment
+python -m venv .venv
+
+# Activate the environment (Windows PowerShell)
+.venv\Scripts\Activate.ps1
+
+# Activate the environment (Linux / macOS)
+source .venv/bin/activate
+```
+
+### 2. Install Project Dependencies
+Run `pip` to install all necessary browser automation, layout, UI, and data components:
+```bash
+pip install -r requirements.txt
+pip install customtkinter DrissionPage beautifulsoup4 lxml requests tqdm
+```
+
+### 3. Setup Proxy and API Tokens
+Create a [.env](file:///D:/LT/Novel_data/.env) file in the root folder to house proxy parameters:
+```ini
+# Add SOCKS5 or HTTP proxies separated by commas
+PROXIES=http://user:pass@proxy1_ip:port,socks5://user:pass@proxy2_ip:port
+```
+Configure your personal token directly in [hardcover_api.py](file:///D:/LT/Novel_data/hardcover_api.py) under `HARDCOVER_API_TOKEN` if crawling new hardcover entries.
+
+---
+
+## 📖 Operational Run Guide
+
+### Step 1: Filter raw Open Library dumps
+Ensure your Open Library dump is configured in `ol_data.py` and run it:
 ```bash
 python ol_data.py
 ```
-This produces [clean_novel_isbns.txt](file:///D:/LT/Novel_data/clean_novel_isbns.txt).
+This writes all isolated novel ISBNs to `clean_novel_isbns.txt`.
 
-### Step 2: Run the Goodreads Scraper
-Crawls details for the English ISBNs inside `clean_novel_isbns.txt`.
+### Step 2: Crawl Goodreads book information
+Launch the scraper to crawl metadata for the filtered ISBNs:
 ```bash
-python goodreads_data.py --threads 4 --delay-min 3.0 --delay-max 6.0 --headless False
+python goodreads_data.py --threads 4 --delay-min 3.0 --delay-max 6.0 --headless True
 ```
+> [!TIP]
+> If the scraper gets blocked or network interrupts occur, you can repair the checkpoints by running:
+> ```bash
+> python clean_checkpoint.py
+> ```
+> Then run `goodreads_data.py` again to resume operations automatically.
 
-### Step 3: Index and Import Genres to Database
-1. **Build SQLite index from JSON database**:
+### Step 3: Crawl Cover Art and Reader Moods
+Fetch cover and mood details from the Hardcover API:
+```bash
+python hardcover_api.py --threads 8 --batch-size 1000 --limit 50000
+```
+This saves data to `hardcover_books.csv` and `hardcover_books.json`.
+
+### Step 4: Build Database & Integrate Data
+1. **Build index from Goodreads JSON**:
    ```bash
    python goodreads_search.py --build-index
    ```
-2. **Backfill & Clean Genres**:
-   Reads raw genres, splits compound items, discards vote counts, enrich with popular shelves, and saves them to the DB:
+2. **Standardize and classify genres**:
    ```bash
    python goodreads_genres.py
    ```
+3. **Merge Hardcover attributes into the database**:
+   ```bash
+   python merge_goodreads_hardcover.py --db goodreads_books.db --csv hardcover_books.csv
+   ```
 
-### Step 4: Perform Searches via CLI
-* Search books matching multiple classification filters: core genre `fantasy`, theme `magic` and `grimdark`, sorted by rating (best-to-worst):
+---
+
+## 🔍 Search Engine & CLI Query Usage
+
+The CLI search tool (`goodreads_search.py`) supports fast SQLite queries with multi-dimensional criteria matching:
+
+### Query Parameters
+
+| Flag | Argument Type | Description |
+| :--- | :--- | :--- |
+| `--search` | String | Performs a wildcard `LIKE` search on both title and description. |
+| `--genre` | Comma-separated strings | Matches all specified genre classifications (AND logic). |
+| `--theme` | Comma-separated strings | Matches all specified theme/trope classifications (AND logic). |
+| `--audience`| Comma-separated strings | Matches all specified audience categories (AND logic). |
+| `--mood` | Comma-separated strings | Matches all specified reader moods (AND logic). |
+| `--sort` | `rating`, `reviews`, `year`, `popularity` | Metric to sort search results. |
+| `--sort-dir`| `asc` or `desc` | Ordering direction. Set `asc` to perform **Sort Inversion** (e.g. worst rated). |
+| `--limit` | Integer | Limits total output records. |
+
+### CLI Query Examples
+
+* **Find Grimdark Magic Books**: Searches for books matching core genre `fantasy`, themes `magic` and `grimdark`, sorted by average rating (best-to-worst):
   ```bash
   python goodreads_search.py --genre "fantasy" --theme "magic, grimdark" --sort rating --sort-dir desc --limit 5
   ```
-* Search books by genre matching both "fantasy" and "young-adult", sorted by ratings from best to worst:
+
+* **Search by Target Audience**: Find Young Adult fantasy novels with high popularity:
   ```bash
-  python goodreads_search.py --genre "fantasy, young-adult" --sort rating --sort-dir desc --limit 5
+  python goodreads_search.py --genre "fantasy" --audience "young adult" --sort popularity --limit 5
   ```
-* Search books by "science fiction" in inverse rating order (worst-to-best):
+
+* **Sort Inversion Example (Worst Sci-Fi)**: Finds Science Fiction books sorted by average rating in ascending order:
   ```bash
   python goodreads_search.py --genre "science fiction" --sort rating --sort-dir asc --limit 5
   ```
-* Search with multiple shelves (both "fantasy" and "favorites" tags):
+
+* **Search by Mood & Theme**: Matches books tagged with the theme `space opera` and reader mood `mysterious`:
   ```bash
-  python goodreads_search.py --shelf "fantasy, favorites" --sort popularity --limit 5
+  python goodreads_search.py --theme "space opera" --mood "mysterious" --sort rating --limit 5
   ```
 
-### Step 5: Launch the GUI Browser
-To run the interactive desktop app:
+---
+
+## 🖥️ Graphical User Interface Desktop App
+
+To launch the dark-themed desktop application:
 ```bash
 python goodreads_ui.py
 ```
 
-### Step 6: Crawl New Releases Automatically (Auto-Get)
-To scan Goodreads monthly releases from 2017 to 2026, identify missing books, and automatically crawl and insert them into the database:
-```bash
-python goodreads_autoget.py
-```
+### GUI Features & Controls
+* **Paginated Result Cards**: Renders search results on custom cards showing title, author names, description synopses, rating metrics, cover colors (if matched), and tags.
+* **Granular Filters Sidebar**: Employs three dedicated search inputs to match specific **Genres**, **Themes & Tropes**, and **Target Audience / Formats** alongside keywords.
+* **Interactive Modals**: Click on any book card to trigger a popup modal that groups genres, themes, and audiences into separate sections, display cover dimensions, and reviews list.
+* **Database Management Panel**: View real-time database counts and launch indexing jobs directly from the sidebar.
 
-### Step 7: Crawl and Merge Hardcover Data
-1. **Crawl Hardcover books**:
-   Starts crawling all books page-by-page from Hardcover API in parallel and saves them directly to CSV and JSON formats:
-   ```bash
-   python hardcover_api.py
-   ```
-2. **Merge to Goodreads SQLite Index**:
-   Runs the batch merge script to enrich existing books with cover images (URLs, colors, sizes), moods, and missing genres, and adds any new books directly to the database:
-   ```bash
-   python merge_goodreads_hardcover.py
-   ```
-
----
-
-## 📂 Codebase Details
-
-*   [ol_data.py](file:///D:/LT/Novel_data/ol_data.py): Open Library extraction and ISBN generation script.
-*   [goodreads_data.py](file:///D:/LT/Novel_data/goodreads_data.py): Main multi-threaded scraping script using Chromium controls and proxy relays.
-*   [goodreads_autoget.py](file:///D:/LT/Novel_data/goodreads_autoget.py): Auto-get script which logs into Gmail, crawls monthly new releases from 2017 to 2026, and inserts missing books into the database.
-*   [hardcover_api.py](file:///D:/LT/Novel_data/hardcover_api.py): Automated multi-threaded crawler script to pull structured books, authors, and cover metadata from the Hardcover GraphQL API.
-*   [merge_goodreads_hardcover.py](file:///D:/LT/Novel_data/merge_goodreads_hardcover.py): Integration and merge tool that synchronizes Hardcover cover designs, moods, and new books into the Goodreads SQLite database.
-*   [clean_checkpoint.py](file:///D:/LT/Novel_data/clean_checkpoint.py): Script to clear temporary network/WAF failure blocks from the scraper queue.
-*   [goodreads_genres.py](file:///D:/LT/Novel_data/goodreads_genres.py): Cleanses, standardizes, enrich (from shelves), and populates database genres.
-*   [goodreads_search.py](file:///D:/LT/Novel_data/goodreads_search.py): Core database indexing logic, CLI query engine, multi-value AND filtering, and sort inversion.
-*   [goodreads_ui.py](file:///D:/LT/Novel_data/goodreads_ui.py): Python Tkinter GUI interface with full filter layout, sort directions dropdown, and genre tags.
-*   [requirements.txt](file:///D:/LT/Novel_data/requirements.txt): List of dependencies.
-*   [todo.md](file:///D:/LT/Novel_data/todo.md): Tracking notes on sources, attributes, and scraping schedules.
+> [!NOTE]
+> The GUI application runs database search queries on background threads to ensure the UI remains fully responsive during heavy searches.
