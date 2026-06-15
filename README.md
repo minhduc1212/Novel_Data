@@ -162,12 +162,19 @@ To run the interactive desktop app:
 python goodreads_ui.py
 ```
 
+### Step 6: Crawl New Releases Automatically (Auto-Get)
+To scan Goodreads monthly releases from 2017 to 2026, identify missing books, and automatically crawl and insert them into the database:
+```bash
+python goodreads_autoget.py
+```
+
 ---
 
 ## 📂 Codebase Details
 
 *   [ol_data.py](file:///D:/LT/Novel_data/ol_data.py): Open Library extraction and ISBN generation script.
 *   [goodreads_data.py](file:///D:/LT/Novel_data/goodreads_data.py): Main multi-threaded scraping script using Chromium controls and proxy relays.
+*   [goodreads_autoget.py](file:///D:/LT/Novel_data/goodreads_autoget.py): Auto-get script which logs into Gmail, crawls monthly new releases from 2017 to 2026, and inserts missing books into the database.
 *   [clean_checkpoint.py](file:///D:/LT/Novel_data/clean_checkpoint.py): Script to clear temporary network/WAF failure blocks from the scraper queue.
 *   [goodreads_genres.py](file:///D:/LT/Novel_data/goodreads_genres.py): Cleanses, standardizes, enrich (from shelves), and populates database genres.
 *   [goodreads_search.py](file:///D:/LT/Novel_data/goodreads_search.py): Core database indexing logic, CLI query engine, multi-value AND filtering, and sort inversion.
