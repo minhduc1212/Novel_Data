@@ -31,7 +31,15 @@
     https://docs.hardcover.app/api/getting-started/
     https://hardcover.app
     https://thestorygraph.com/
+    https://www.librarything.com/
 
 # auto_get
     playwright -> sign in using gmail -> make profile name ./goodreads
     get https://www.goodreads.com/new_releases/2017/1 (until 2026/06)-> get all book url -> use requests to get data of its urrl -> if the book already in .db -> pass -> if not -> get data of each book to satisfy the goodreads_books.db(can remove popular shelf) also base on goodreads_1data (should wait to the books appear quite a long time -> wait until appear)
+
+# Goodreads
+    search: https://www.goodreads.com/search?q=House+of+Earth+and+Blood&ref=nav_sb_noss_l_24
+    shelf: https://www.goodreads.com/shelf/show/fiction?page=1
+
+# Todo
+    Get and Merge data of all books from 3 source: hardcover, goodreads, openlibrary, the column should be devided clearly into 3 source: hardcover, goodreads, openlibrary

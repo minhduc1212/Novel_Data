@@ -581,35 +581,35 @@ def run_crawl(args):
             
     query = """
     query GetBooks($limit: Int!, $offset: Int!) {
-      books(limit: $limit, offset: $offset, order_by: {id: asc}) {
-        id
-        title
-        subtitle
-        slug
-        description
-        rating
-        ratings_count
-        reviews_count
-        pages
-        release_year
-        release_date
-        activities_count
-        book_category_id
-        compilation
-        editions_count
-        journals_count
-        lists_count
-        prompts_count
-        users_count
-        users_read_count
-        cached_contributors
-        cached_tags
-        cached_image
-        editions {
-          isbn_10
-          isbn_13
+        books(limit: $limit, offset: $offset, order_by: {id: asc}) {
+            id
+            title
+            subtitle
+            slug
+            description
+            rating
+            ratings_count
+            reviews_count
+            pages
+            release_year
+            release_date
+            activities_count
+            book_category_id
+            compilation
+            editions_count
+            journals_count
+            lists_count
+            prompts_count
+            users_count
+            users_read_count
+            cached_contributors
+            cached_tags
+            cached_image
+            editions {
+                isbn_10
+                isbn_13
+            }
         }
-      }
     }
     """
     
