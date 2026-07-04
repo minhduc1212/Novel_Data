@@ -390,8 +390,8 @@ def merge_data(db_path, csv_path, batch_size):
 
 def main():
     parser = argparse.ArgumentParser(description="Trộn dữ liệu sách Hardcover vào cơ sở dữ liệu Goodreads SQLite")
-    parser.add_argument("--db", default="goodreads_books.db", help="Đường dẫn đến file cơ sở dữ liệu SQLite (mặc định: goodreads_books.db)")
-    parser.add_argument("--csv", default="hardcover_books.csv", help="Đường dẫn đến file dữ liệu Hardcover CSV (mặc định: hardcover_books.csv)")
+    parser.add_argument("--db", default=os.path.join("goodreads", "goodreads_books.db"), help="Đường dẫn đến file cơ sở dữ liệu SQLite (mặc định: goodreads/goodreads_books.db)")
+    parser.add_argument("--csv", default=os.path.join("hardcover", "hardcover_books.csv"), help="Đường dẫn đến file dữ liệu Hardcover CSV (mặc định: hardcover/hardcover_books.csv)")
     parser.add_argument("--batch-size", type=int, default=1000, help="Kích thước lô giao dịch ghi cơ sở dữ liệu (mặc định: 1000)")
     
     args = parser.parse_args()

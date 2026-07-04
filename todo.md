@@ -22,7 +22,7 @@
 # DATA
     https://www.kaggle.com/datasets/pypiahmad/goodreads-book-reviews1
     https://www.kaggle.com/datasets/pooriamst/best-books-ever-dataset
-    https://www.kaggle.com/datasets/middlelight/
+    https://www.kaggle.com/datasets/middlelight/goodreadsbookswithgenres
     https://openlibrary.org/developers/dumps
     https://www.goodreads.com
     https://cseweb.ucsd.edu/~jmcauley/datasets/goodreads.

@@ -10,4 +10,40 @@ __pycache__
 *.db-shm
 *.db-wal
 .env
-goodreads
+*.db
+*.sqlite3
+*.csv
+*.log
+*.
+*.dat
+
+# Restructured Data Paths
+hardcover/hardcover_books.csv
+hardcover/hardcover_books.json
+hardcover/hardcover_checkpoint.json
+hardcover/hardcover_crawler.log
+goodreads/goodreads_books.csv
+goodreads/goodreads_books.json
+goodreads/goodreads_books.db
+goodreads/goodreads_checkpoint.json
+goodreads/goodreads_scraper.log
+goodreads/clean_novel_isbns.txt
+openlibrary/output_ol/
+
+# Chromium Browser Profile files (automation leftovers)
+goodreads/Crashpad/
+goodreads/Default/
+goodreads/GrShaderCache/
+goodreads/GraphiteDawnCache/
+goodreads/Safe Browsing/
+goodreads/ShaderCache/
+goodreads/component_crx_cache/
+goodreads/extensions_crx_cache/
+goodreads/segmentation_platform/
+goodreads/BrowserMetrics-spare.pma
+goodreads/Last Browser
+goodreads/Last Version
+goodreads/Local State
+goodreads/Variations
+goodreads/first_party_sets.db
+goodreads/first_party_sets.db-journal
